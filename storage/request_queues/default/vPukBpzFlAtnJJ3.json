@@ -1,0 +1,9 @@
+{
+	"id": "vPukBpzFlAtnJJ3",
+	"json": "{\"id\":\"vPukBpzFlAtnJJ3\",\"url\":\"https://groceries.morrisons.com/products/morrisons-ripe-ready-bananas-5-pack/110378231\",\"loadedUrl\":\"https://groceries.morrisons.com/products/morrisons-ripe-ready-bananas-5-pack/110378231\",\"uniqueKey\":\"https://groceries.morrisons.com/products/morrisons-ripe-ready-bananas-5-pack/110378231\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{\"__crawlee\":{\"state\":4}},\"handledAt\":\"2025-04-24T11:37:18.693Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://groceries.morrisons.com/products/morrisons-ripe-ready-bananas-5-pack/110378231",
+	"url": "https://groceries.morrisons.com/products/morrisons-ripe-ready-bananas-5-pack/110378231"
+}

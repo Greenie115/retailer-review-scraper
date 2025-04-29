@@ -1,0 +1,92 @@
+{
+  "usableSessionsCount": 2,
+  "retiredSessionsCount": 0,
+  "sessions": [
+    {
+      "id": "session_iOb13l3RdP",
+      "cookieJar": {
+        "version": "tough-cookie@5.1.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": []
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2025-04-24T12:26:21.844Z",
+      "createdAt": "2025-04-24T11:36:21.844Z",
+      "usageCount": 0,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    },
+    {
+      "id": "session_8FpAB4vapC",
+      "cookieJar": {
+        "version": "tough-cookie@5.1.2",
+        "storeType": "MemoryCookieStore",
+        "rejectPublicSuffixes": true,
+        "enableLooseMode": false,
+        "allowSpecialUseDomain": true,
+        "prefixSecurity": "silent",
+        "cookies": [
+          {
+            "key": "AWSALB",
+            "value": "FQiTW2xzc+5pBpbsumybeed3xLHPaSfyD4+XAJGRWrclUxyiKGYY7jH8fG3Ct3ohntlLz9yI14IhnteI8GB1qaq/FqsmWk5RRd5qBW54W0n6zfRL53SDs/93fdLX",
+            "expires": "2025-05-01T11:36:24.102Z",
+            "domain": "groceries.morrisons.com",
+            "path": "/",
+            "hostOnly": false,
+            "creation": "2025-04-24T11:36:25.227Z",
+            "lastAccessed": "2025-04-24T11:36:25.228Z"
+          },
+          {
+            "key": "AWSALBCORS",
+            "value": "FQiTW2xzc+5pBpbsumybeed3xLHPaSfyD4+XAJGRWrclUxyiKGYY7jH8fG3Ct3ohntlLz9yI14IhnteI8GB1qaq/FqsmWk5RRd5qBW54W0n6zfRL53SDs/93fdLX",
+            "expires": "2025-05-01T11:36:24.102Z",
+            "domain": "groceries.morrisons.com",
+            "path": "/",
+            "secure": true,
+            "hostOnly": false,
+            "creation": "2025-04-24T11:36:25.228Z",
+            "lastAccessed": "2025-04-24T11:36:25.229Z"
+          },
+          {
+            "key": "VISITORID",
+            "value": "sOiSIjDK39QAX6Bk5jvagJNAZIQOQ85tZTDRKqw97zMKEWeH3Y75vxMlsJ09yuRzJYoGWRtubRRvIydvK4FxPqN-K5i1RPPWwRPIcQ==",
+            "expires": "2025-04-24T12:36:24.102Z",
+            "domain": "groceries.morrisons.com",
+            "path": "/",
+            "secure": true,
+            "httpOnly": true,
+            "hostOnly": false,
+            "creation": "2025-04-24T11:36:25.228Z",
+            "lastAccessed": "2025-04-24T11:36:25.228Z"
+          },
+          {
+            "key": "global_sid",
+            "value": "VtjhY3hDVNW3y9ZEk6LsZgfMOlOWz92RefNATlYaWDvErxuc9z5RW4B-mNXAfkzj8sXywXW0XKRii7NL8YVTML2-csLoHYdN-PVFqQ==",
+            "expires": "2025-04-24T12:26:25.226Z",
+            "domain": "groceries.morrisons.com",
+            "path": "/",
+            "secure": true,
+            "httpOnly": true,
+            "hostOnly": false,
+            "creation": "2025-04-24T11:36:25.229Z",
+            "lastAccessed": "2025-04-24T11:36:25.229Z"
+          }
+        ]
+      },
+      "userData": {},
+      "maxErrorScore": 3,
+      "errorScoreDecrement": 0.5,
+      "expiresAt": "2025-04-24T12:26:21.849Z",
+      "createdAt": "2025-04-24T11:36:21.849Z",
+      "usageCount": 2,
+      "maxUsageCount": 50,
+      "errorScore": 0
+    }
+  ]
+}
