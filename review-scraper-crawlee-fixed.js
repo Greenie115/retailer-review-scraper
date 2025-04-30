@@ -1,42 +1,34 @@
 const { PlaywrightCrawler, log } = require('crawlee');
 const { parseDate } = require('chrono-node');
+const urlUtils = require('./url-utils'); // Import URL utilities at the top
 
 // Global arrays to store reviews for each retailer
 global.tescoReviews = [];
 global.sainsburysReviews = [];
 global.asdaReviews = [];
 global.morrisonsReviews = [];
+global.icelandReviews = [];
 
 // Main function to extract reviews
 async function extractReviews(page, url, maxReviews = 50) {
   log.info(`Starting review extraction for URL: ${url}`);
 
-  // Determine which retailer's site we're on
-  let retailer = 'unknown';
-  if (url.includes('tesco.com')) {
-    retailer = 'tesco';
-  } else if (url.includes('sainsburys.co.uk')) {
-    retailer = 'sainsburys';
-  } else if (url.includes('asda.com')) {
-    retailer = 'asda';
-  } else if (url.includes('morrisons.com')) {
-    retailer = 'morrisons';
-  }
-
+  // Determine which retailer's site we're on using the urlUtils module
+  const retailer = urlUtils.detectRetailerFromUrl(url);
   log.info(`Detected retailer: ${retailer}`);
 
   // Configure site-specific settings
   const siteConfig = {
     log: log,
     retailer: retailer,
-    reviewsTabSelector: 'button:has-text("Reviews"), a:has-text("Reviews"), button[data-auto-id="reviews-tab"], [data-auto-id="reviews-tab"]',
-    reviewsSection: '.reviews-section, #reviews, [data-auto-id="reviews-section"]',
-    reviewContainerSelector: 'div.review, div.review-card, div[data-auto-id="review-card"], div.review-container',
-    ratingSelector: 'div.star-rating, div[data-auto-id="star-rating"], div.rating-stars',
+    reviewsTabSelector: 'button:has-text("Reviews"), a:has-text("Reviews"), button[data-auto-id="reviews-tab"], [data-auto-id="reviews-tab"], a:has-text("Reviews ("), li[role="tab"] a:has-text("Reviews")',
+    reviewsSection: '.reviews-section, #reviews, [data-auto-id="reviews-section"], [data-test-selector="pdp-reviews"]',
+    reviewContainerSelector: 'div.review, div.review-card, div[data-auto-id="review-card"], div.review-container, div._105qcvcz9._105qcvc11x._105qcvc1cr._105qcvc12i._105qcvc12u._105qcvc240._105qcvc283',
+    ratingSelector: 'div.star-rating, div[data-auto-id="star-rating"], div.rating-stars, div._105qcvcz9._105qcvc11u._105qcvc129._105qcvc136._105qcvc1ci',
     titleSelector: 'h3.review-title, h4.review-title, div[data-auto-id="review-title"], div.review-title',
-    textSelector: 'p.review-text, div.review-text, div[data-auto-id="review-text"]',
-    dateSelector: 'span.review-date, div.review-date, span[data-auto-id="review-date"]',
-    paginationSelector: 'button:has-text("Next"), button:has-text("Show more"), button[data-auto-id="pagination-next"]'
+    textSelector: 'p.review-text, div.review-text, div[data-auto-id="review-text"], p._105qcvc4h0._105qcvc4hi._105qcvc4il._105qcvc4hr._105qcvc4iu._105qcvc4mo._105qcvc4j9.en3gmk0.en3gmk6',
+    dateSelector: 'span.review-date, div.review-date, span[data-auto-id="review-date"], p._105qcvc4h0._105qcvc4hi._105qcvc4il._105qcvc4hr._105qcvc4iu._105qcvc4n0._105qcvc4j9.en3gmk0.en3gmk3',
+    paginationSelector: 'button:has-text("Next"), button:has-text("Show more"), button[data-auto-id="pagination-next"], button[data-test-selector="show-more-reviews-button"]'
   };
 
   // Handle the site based on the retailer
@@ -55,6 +47,9 @@ async function extractReviews(page, url, maxReviews = 50) {
         break;
       case 'morrisons':
         reviews = await handleMorrisonsSite(page, siteConfig, maxReviews);
+        break;
+      case 'iceland':
+        reviews = await handleIcelandSite(page, siteConfig, maxReviews);
         break;
       default:
         log.warning(`Unknown retailer for URL: ${url}`);
@@ -1480,9 +1475,6 @@ async function handleGenericSite(page, siteConfig, maxReviews) {
   return genericReviews;
 }
 
-// Import URL utilities
-const urlUtils = require('./url-utils');
-
 // Main scraper function that will be called from server.js
 async function scrapeReviews(url, options = {}) {
   log.info(`Starting scrapeReviews for URL: ${url}`);
@@ -1590,6 +1582,699 @@ async function scrapeReviews(url, options = {}) {
 }
 
 // Export the functions
+// Iceland specific handler
+async function handleIcelandSite(page, siteConfig, maxReviews) {
+  const log = siteConfig.log;
+  log.info('Using Iceland specific handler');
+  console.log('DEBUGGING: Using Iceland handler');
+
+  // Initialize global array for Iceland reviews
+  global.icelandReviews = [];
+
+  try {
+    // Implementation for Iceland site
+    log.info('Iceland handler implementation');
+
+    // Take a screenshot of the initial page
+    await page.screenshot({ path: `iceland-initial-${Date.now()}.png` });
+
+    // First, handle cookie consent if present
+    try {
+      const cookieButton = await page.$('button:has-text("Accept all cookies"), #onetrust-accept-btn-handler');
+      if (cookieButton) {
+        log.info('Found cookie consent button, clicking...');
+        await cookieButton.click().catch(e => log.warning(`Cookie click failed: ${e.message}`));
+        await page.waitForTimeout(2000);
+      }
+    } catch (cookieError) {
+      log.warning(`Error handling cookie consent: ${cookieError.message}`);
+    }
+
+    // Scroll down to make sure all elements are loaded
+    log.info('Scrolling page to load all elements');
+    await page.evaluate(() => {
+      window.scrollBy(0, 500);
+    });
+    await page.waitForTimeout(2000);
+
+    // Take a screenshot after scrolling
+    await page.screenshot({ path: `iceland-after-scroll-${Date.now()}.png` });
+
+    // Find and click on the reviews tab
+    log.info('Looking for reviews tab');
+
+    // Take a screenshot before attempting to click the tab
+    await page.screenshot({ path: `iceland-before-tab-search-${Date.now()}.png` });
+
+    // Try multiple approaches to click the reviews tab
+    let tabClicked = false;
+
+    // Approach 1: Try to click using the specific class structure from the example
+    try {
+      log.info('Trying to click reviews tab using specific class structure');
+      tabClicked = await page.evaluate(() => {
+        // Look for the specific tab structure provided in the example
+        const reviewTab = document.querySelector('li[role="tab"] a[href*="#reviews"]');
+        if (reviewTab) {
+          console.log(`Found reviews tab with text: ${reviewTab.textContent}`);
+          reviewTab.click();
+          return true;
+        }
+        return false;
+      });
+    } catch (e) {
+      log.warning(`Error clicking reviews tab with specific selector: ${e.message}`);
+    }
+
+    // Approach 2: Try to click using a more general selector if the first approach failed
+    if (!tabClicked) {
+      try {
+        log.info('Trying to click reviews tab using general selectors');
+        tabClicked = await page.evaluate(() => {
+          // Look for any link that contains "Reviews" text and has a number in parentheses
+          const reviewLinks = Array.from(document.querySelectorAll('a'));
+          const reviewTabLink = reviewLinks.find(link =>
+            link.textContent.includes('Reviews') &&
+            /Reviews\s*\(\d+\)/.test(link.textContent)
+          );
+
+          if (reviewTabLink) {
+            console.log(`Found reviews link with text: ${reviewTabLink.textContent}`);
+            reviewTabLink.click();
+            return true;
+          }
+
+          // Try to find the tab by role
+          const tabs = document.querySelectorAll('li[role="tab"]');
+          for (const tab of tabs) {
+            if (tab.textContent.includes('Reviews')) {
+              console.log(`Found reviews tab with text: ${tab.textContent}`);
+              const link = tab.querySelector('a');
+              if (link) {
+                link.click();
+                return true;
+              } else {
+                tab.click();
+                return true;
+              }
+            }
+          }
+
+          return false;
+        });
+      } catch (e) {
+        log.warning(`Error clicking reviews tab with general selector: ${e.message}`);
+      }
+    }
+
+    // Approach 3: Try direct navigation to the reviews section using the URL
+    if (!tabClicked) {
+      try {
+        log.info('Trying direct navigation to reviews section via URL');
+        // Get the current URL and append #reviews
+        const currentUrl = page.url();
+        const reviewsUrl = currentUrl.includes('#')
+          ? currentUrl.split('#')[0] + '#reviews'
+          : currentUrl + '#reviews';
+
+        await page.goto(reviewsUrl, { waitUntil: 'networkidle0' });
+        tabClicked = true;
+        log.info(`Navigated directly to ${reviewsUrl}`);
+      } catch (e) {
+        log.warning(`Error navigating directly to reviews URL: ${e.message}`);
+      }
+    }
+
+    if (tabClicked) {
+      log.info('Successfully accessed reviews tab');
+    } else {
+      log.warning('Could not access reviews tab through clicking or navigation, trying to find reviews section directly');
+
+      // Try to find and scroll to the reviews section directly
+      try {
+        const reviewsSectionFound = await page.evaluate(() => {
+          // Try different selectors that might contain reviews
+          const selectors = [
+            '#reviews',
+            '[data-test-selector="pdp-reviews"]',
+            'div[id*="review"]',
+            'section[id*="review"]',
+            'div[class*="review"]'
+          ];
+
+          for (const selector of selectors) {
+            const element = document.querySelector(selector);
+            if (element) {
+              console.log(`Found reviews section with selector: ${selector}`);
+              element.scrollIntoView();
+              return true;
+            }
+          }
+
+          return false;
+        });
+
+        if (reviewsSectionFound) {
+          log.info('Found and scrolled to reviews section directly');
+        } else {
+          log.warning('Could not find reviews section directly');
+        }
+      } catch (e) {
+        log.warning(`Error finding reviews section directly: ${e.message}`);
+      }
+    }
+
+    // Wait for reviews to load
+    await page.waitForTimeout(3000);
+
+    // Take a screenshot after clicking the tab
+    await page.screenshot({ path: `iceland-after-tab-click-${Date.now()}.png` });
+
+    // Scroll down to make sure all reviews are loaded
+    log.info('Scrolling page to load all reviews');
+    await autoScroll(page);
+    await page.waitForTimeout(2000);
+
+    // Take a screenshot after scrolling to reviews
+    await page.screenshot({ path: `iceland-reviews-loaded-${Date.now()}.png` });
+
+    // Extract the HTML of the page for debugging
+    const pageHtml = await page.content();
+    const fs = require('fs');
+    fs.writeFileSync(`iceland-page-html-${Date.now()}.html`, pageHtml);
+    log.info('Saved page HTML for debugging');
+
+    // Extract reviews using direct page evaluation
+    log.info('Extracting reviews from page');
+    const reviews = await page.evaluate(() => {
+      console.log('Starting Iceland review extraction');
+      const results = [];
+
+      // Try multiple selectors to find review containers
+      const selectors = [
+        // Specific class structure from the example
+        'div._105qcvcz9._105qcvc11x._105qcvc1cr._105qcvc12i._105qcvc12u._105qcvc240._105qcvc283._105qcvc4yg',
+        // More general selectors
+        '[data-test-selector="pdp-reviews"] > div > div > div > div',
+        '#reviews div[class*="_105qcvc"]',
+        // Fallback to any div that might contain reviews
+        'div:has(svg[xlink\\:href="#review-star-fill"])'
+      ];
+
+      // Try each selector until we find review containers
+      let reviewContainers = [];
+      for (const selector of selectors) {
+        try {
+          reviewContainers = document.querySelectorAll(selector);
+          console.log(`Tried selector "${selector}" and found ${reviewContainers.length} containers`);
+          if (reviewContainers.length > 0) {
+            break;
+          }
+        } catch (e) {
+          console.error(`Error with selector "${selector}": ${e.message}`);
+        }
+      }
+
+      // If we still don't have any containers, try a more aggressive approach
+      if (reviewContainers.length === 0) {
+        console.log('No review containers found with standard selectors, trying alternative approach');
+
+        // Look for elements that contain star ratings
+        const starContainers = Array.from(document.querySelectorAll('div:has(svg[xlink\\:href="#review-star-fill"])'));
+
+        // Filter to only those that are likely review containers
+        reviewContainers = starContainers.filter(container => {
+          // Check if it has date text (typically contains "Submitted by")
+          const hasDateText = Array.from(container.querySelectorAll('p')).some(p =>
+            p.textContent.includes('Submitted by')
+          );
+
+          // Check if it has review text (typically a longer paragraph)
+          const hasReviewText = Array.from(container.querySelectorAll('p')).some(p =>
+            p.textContent.length > 20 && !p.textContent.includes('Submitted by')
+          );
+
+          return hasDateText && hasReviewText;
+        });
+
+        console.log(`Found ${reviewContainers.length} review containers using alternative approach`);
+      }
+
+      // Process each review container
+      for (const container of reviewContainers) {
+        try {
+          // Extract rating from stars
+          let rating = '0'; // Default to 0 stars
+
+          // First, check if we can find the rating container
+          const ratingContainer = container.querySelector('div._105qcvcz9._105qcvc11u._105qcvc129._105qcvc136._105qcvc1ci');
+          if (ratingContainer) {
+            // Direct approach based on the HTML structure
+            // Count SVG elements with use[xlink:href="#review-star-fill"]
+            try {
+              const svgElements = ratingContainer.querySelectorAll('svg');
+              let filledCount = 0;
+
+              for (const svg of svgElements) {
+                const useElement = svg.querySelector('use');
+                if (useElement) {
+                  const href = useElement.getAttribute('xlink:href');
+                  if (href === '#review-star-fill') {
+                    filledCount++;
+                  }
+                }
+              }
+
+              if (filledCount > 0) {
+                rating = filledCount.toString();
+                console.log(`Extracted rating ${rating} from ${filledCount} filled stars (direct method)`);
+              } else {
+                // If no filled stars found, try another approach
+                const totalStars = svgElements.length;
+                const filledStars = Array.from(svgElements).filter(svg => {
+                  const useElement = svg.querySelector('use');
+                  return useElement && useElement.getAttribute('xlink:href') === '#review-star-fill';
+                }).length;
+
+                if (filledStars > 0) {
+                  rating = filledStars.toString();
+                  console.log(`Extracted rating ${rating} from ${filledStars}/${totalStars} stars (filtered method)`);
+                } else {
+                  // Last resort: check if we can find any filled stars by text content
+                  const filledStarsText = Array.from(svgElements).filter(svg => {
+                    return svg.textContent && svg.textContent.includes('fill');
+                  }).length;
+
+                  if (filledStarsText > 0) {
+                    rating = filledStarsText.toString();
+                    console.log(`Extracted rating ${rating} from text content (last resort)`);
+                  }
+                }
+              }
+            } catch (e) {
+              console.error('Error extracting star rating:', e);
+            }
+
+            // If we still don't have a rating, try the original methods
+            if (rating === '0') {
+              // Count filled stars (with #review-star-fill)
+              const filledStars = ratingContainer.querySelectorAll('svg[xlink\\:href="#review-star-fill"]');
+              if (filledStars && filledStars.length > 0) {
+                rating = filledStars.length.toString();
+                console.log(`Extracted rating ${rating} from ${filledStars.length} filled stars`);
+              }
+            }
+          } else {
+            // Fallback: try to find stars directly
+            const filledStars = container.querySelectorAll('svg[xlink\\:href="#review-star-fill"]');
+            if (filledStars && filledStars.length > 0) {
+              rating = filledStars.length.toString();
+              console.log(`Extracted rating ${rating} from ${filledStars.length} filled stars (fallback)`);
+            }
+          }
+
+          // Extract date - try multiple approaches
+          let date = 'Unknown date';
+
+          // Approach 1: Look for specific class
+          const dateElement = container.querySelector('p[class*="_105qcvc"][class*="en3gmk0"][class*="en3gmk3"]');
+          if (dateElement && dateElement.textContent.includes('Submitted by')) {
+            date = dateElement.textContent.trim();
+          } else {
+            // Approach 2: Look for any paragraph with "Submitted by" text
+            const paragraphs = container.querySelectorAll('p');
+            for (const p of paragraphs) {
+              if (p.textContent.includes('Submitted by')) {
+                date = p.textContent.trim();
+                break;
+              }
+            }
+          }
+
+          console.log(`Extracted date: "${date}"`);
+
+          // Extract review text - try multiple approaches
+          let text = '';
+
+          // Approach 1: Look for specific class
+          const textElement = container.querySelector('p[class*="_105qcvc"][class*="en3gmk0"][class*="en3gmk6"]');
+          if (textElement) {
+            text = textElement.textContent.trim();
+          } else {
+            // Approach 2: Look for the longest paragraph that's not the date
+            const paragraphs = Array.from(container.querySelectorAll('p'));
+            const nonDateParagraphs = paragraphs.filter(p => !p.textContent.includes('Submitted by'));
+
+            if (nonDateParagraphs.length > 0) {
+              // Sort by text length (descending) and take the longest
+              const sortedByLength = nonDateParagraphs.sort((a, b) =>
+                b.textContent.length - a.textContent.length
+              );
+              text = sortedByLength[0].textContent.trim();
+            }
+          }
+
+          console.log(`Extracted text: "${text.substring(0, 30)}..."`);
+
+          // Only add if we have meaningful text
+          if (text && text.length > 5) {
+            results.push({
+              rating,
+              title: 'Iceland Product Review', // Iceland reviews don't have titles
+              date,
+              text
+            });
+            console.log(`Added review with rating ${rating}`);
+          }
+        } catch (e) {
+          console.error('Error processing review container:', e);
+        }
+      }
+
+      console.log(`Returning ${results.length} reviews`);
+      return results;
+    });
+
+    // Process pagination if needed
+    if (reviews.length > 0) {
+      log.info(`Found ${reviews.length} reviews on first page`);
+      global.icelandReviews = reviews;
+
+      // Check if we need to get more reviews
+      if (reviews.length < maxReviews) {
+        log.info(`Need more reviews, found ${reviews.length}, max is ${maxReviews}`);
+
+        // Try to click the "Show More Reviews" button up to 9 times (for a total of 10 pages)
+        for (let i = 0; i < 9; i++) {
+          if (global.icelandReviews.length >= maxReviews) {
+            log.info(`Reached max reviews (${maxReviews}), stopping pagination`);
+            break;
+          }
+
+          log.info(`Trying to click Show More Reviews button, attempt ${i+1}`);
+
+          // Take a screenshot before clicking show more
+          await page.screenshot({ path: `iceland-before-show-more-${i+1}-${Date.now()}.png` });
+
+          // Try to click the Show More Reviews button
+          const showMoreClicked = await page.evaluate(() => {
+            // Try multiple selectors for the Show More Reviews button
+            const selectors = [
+              'button[data-test-selector="show-more-reviews-button"]',
+              'button:has-text("Show More Reviews")',
+              'button:has-text("more reviews")',
+              'button:has-text("Load more")',
+              // More general selectors
+              'button.fccxcl4', // From the class in the example
+              'button[class*="_105qcvc"]' // Any button with the Iceland class pattern
+            ];
+
+            // Try each selector
+            for (const selector of selectors) {
+              try {
+                const showMoreButton = document.querySelector(selector);
+                if (showMoreButton) {
+                  console.log(`Found Show More Reviews button with selector: ${selector}`);
+
+                  // Check if the button is disabled
+                  if (showMoreButton.disabled || showMoreButton.getAttribute('aria-disabled') === 'true') {
+                    console.log('Show More Reviews button is disabled');
+                    continue; // Try next selector
+                  }
+
+                  // Click the button
+                  console.log('Clicking Show More Reviews button');
+                  showMoreButton.click();
+                  return true;
+                }
+              } catch (e) {
+                console.error(`Error with selector "${selector}": ${e.message}`);
+              }
+            }
+
+            // If we get here, we couldn't find a working button
+            console.log('Show More Reviews button not found with any selector');
+            return false;
+          });
+
+          if (showMoreClicked) {
+            log.info('Successfully clicked Show More Reviews button');
+
+            // Wait for the next page to load
+            await page.waitForTimeout(3000);
+
+            // Take a screenshot after clicking show more
+            await page.screenshot({ path: `iceland-after-show-more-${i+1}-${Date.now()}.png` });
+
+            // Extract reviews from the new page
+            const nextPageReviews = await page.evaluate(() => {
+              console.log('Extracting reviews after clicking Show More');
+              const results = [];
+
+              // Try multiple selectors to find review containers
+              const selectors = [
+                // Specific class structure from the example
+                'div._105qcvcz9._105qcvc11x._105qcvc1cr._105qcvc12i._105qcvc12u._105qcvc240._105qcvc283._105qcvc4yg',
+                // More general selectors
+                '[data-test-selector="pdp-reviews"] > div > div > div > div',
+                '#reviews div[class*="_105qcvc"]',
+                // Fallback to any div that might contain reviews
+                'div:has(svg[xlink\\:href="#review-star-fill"])'
+              ];
+
+              // Try each selector until we find review containers
+              let reviewContainers = [];
+              for (const selector of selectors) {
+                try {
+                  reviewContainers = document.querySelectorAll(selector);
+                  console.log(`Tried selector "${selector}" and found ${reviewContainers.length} containers after Show More`);
+                  if (reviewContainers.length > 0) {
+                    break;
+                  }
+                } catch (e) {
+                  console.error(`Error with selector "${selector}": ${e.message}`);
+                }
+              }
+
+              // If we still don't have any containers, try a more aggressive approach
+              if (reviewContainers.length === 0) {
+                console.log('No review containers found with standard selectors after Show More, trying alternative approach');
+
+                // Look for elements that contain star ratings
+                const starContainers = Array.from(document.querySelectorAll('div:has(svg[xlink\\:href="#review-star-fill"])'));
+
+                // Filter to only those that are likely review containers
+                reviewContainers = starContainers.filter(container => {
+                  // Check if it has date text (typically contains "Submitted by")
+                  const hasDateText = Array.from(container.querySelectorAll('p')).some(p =>
+                    p.textContent.includes('Submitted by')
+                  );
+
+                  // Check if it has review text (typically a longer paragraph)
+                  const hasReviewText = Array.from(container.querySelectorAll('p')).some(p =>
+                    p.textContent.length > 20 && !p.textContent.includes('Submitted by')
+                  );
+
+                  return hasDateText && hasReviewText;
+                });
+
+                console.log(`Found ${reviewContainers.length} review containers using alternative approach after Show More`);
+              }
+
+              // Process each review container
+              for (const container of reviewContainers) {
+                try {
+                  // Extract rating from stars
+                  let rating = '0'; // Default to 0 stars
+
+                  // First, check if we can find the rating container
+                  const ratingContainer = container.querySelector('div._105qcvcz9._105qcvc11u._105qcvc129._105qcvc136._105qcvc1ci');
+                  if (ratingContainer) {
+                    // Direct approach based on the HTML structure
+                    // Count SVG elements with use[xlink:href="#review-star-fill"]
+                    try {
+                      const svgElements = ratingContainer.querySelectorAll('svg');
+                      let filledCount = 0;
+
+                      for (const svg of svgElements) {
+                        const useElement = svg.querySelector('use');
+                        if (useElement) {
+                          const href = useElement.getAttribute('xlink:href');
+                          if (href === '#review-star-fill') {
+                            filledCount++;
+                          }
+                        }
+                      }
+
+                      if (filledCount > 0) {
+                        rating = filledCount.toString();
+                        console.log(`Extracted rating ${rating} from ${filledCount} filled stars (direct method)`);
+                      } else {
+                        // Try a more specific approach based on the exact HTML structure provided
+                        // Count SVGs with use[xlink:href="#review-star-fill"] vs use[xlink:href="#review-star"]
+                        let filledStarCount = 0;
+                        let totalStarCount = 0;
+
+                        for (const svg of svgElements) {
+                          totalStarCount++;
+                          const useElement = svg.querySelector('use');
+                          if (useElement) {
+                            const href = useElement.getAttribute('xlink:href');
+                            if (href === '#review-star-fill') {
+                              filledStarCount++;
+                            }
+                          }
+                        }
+
+                        if (filledStarCount > 0 && totalStarCount > 0) {
+                          rating = filledStarCount.toString();
+                          console.log(`Extracted rating ${rating} from ${filledStarCount}/${totalStarCount} stars (specific method)`);
+                        } else {
+                          // If no filled stars found, try another approach
+                          const totalStars = svgElements.length;
+                          const filledStars = Array.from(svgElements).filter(svg => {
+                            const useElement = svg.querySelector('use');
+                            return useElement && useElement.getAttribute('xlink:href') === '#review-star-fill';
+                          }).length;
+
+                          if (filledStars > 0) {
+                            rating = filledStars.toString();
+                            console.log(`Extracted rating ${rating} from ${filledStars}/${totalStars} stars (filtered method)`);
+                          } else {
+                            // Last resort: check if we can find any filled stars by text content
+                            const filledStarsText = Array.from(svgElements).filter(svg => {
+                              return svg.textContent && svg.textContent.includes('fill');
+                            }).length;
+
+                            if (filledStarsText > 0) {
+                              rating = filledStarsText.toString();
+                              console.log(`Extracted rating ${rating} from text content (last resort)`);
+                            }
+                          }
+                        }
+                      }
+                    } catch (e) {
+                      console.error('Error extracting star rating:', e);
+                    }
+
+                    // If we still don't have a rating, try the original methods
+                    if (rating === '0') {
+                      // Count filled stars (with #review-star-fill)
+                      const filledStars = ratingContainer.querySelectorAll('svg[xlink\\:href="#review-star-fill"]');
+                      if (filledStars && filledStars.length > 0) {
+                        rating = filledStars.length.toString();
+                        console.log(`Extracted rating ${rating} from ${filledStars.length} filled stars`);
+                      }
+                    }
+                  } else {
+                    // Fallback: try to find stars directly
+                    const filledStars = container.querySelectorAll('svg[xlink\\:href="#review-star-fill"]');
+                    if (filledStars && filledStars.length > 0) {
+                      rating = filledStars.length.toString();
+                      console.log(`Extracted rating ${rating} from ${filledStars.length} filled stars (fallback)`);
+                    }
+                  }
+
+                  // Extract date - try multiple approaches
+                  let date = 'Unknown date';
+
+                  // Approach 1: Look for specific class
+                  const dateElement = container.querySelector('p[class*="_105qcvc"][class*="en3gmk0"][class*="en3gmk3"]');
+                  if (dateElement && dateElement.textContent.includes('Submitted by')) {
+                    date = dateElement.textContent.trim();
+                  } else {
+                    // Approach 2: Look for any paragraph with "Submitted by" text
+                    const paragraphs = container.querySelectorAll('p');
+                    for (const p of paragraphs) {
+                      if (p.textContent.includes('Submitted by')) {
+                        date = p.textContent.trim();
+                        break;
+                      }
+                    }
+                  }
+
+                  // Extract review text - try multiple approaches
+                  let text = '';
+
+                  // Approach 1: Look for specific class
+                  const textElement = container.querySelector('p[class*="_105qcvc"][class*="en3gmk0"][class*="en3gmk6"]');
+                  if (textElement) {
+                    text = textElement.textContent.trim();
+                  } else {
+                    // Approach 2: Look for the longest paragraph that's not the date
+                    const paragraphs = Array.from(container.querySelectorAll('p'));
+                    const nonDateParagraphs = paragraphs.filter(p => !p.textContent.includes('Submitted by'));
+
+                    if (nonDateParagraphs.length > 0) {
+                      // Sort by text length (descending) and take the longest
+                      const sortedByLength = nonDateParagraphs.sort((a, b) =>
+                        b.textContent.length - a.textContent.length
+                      );
+                      text = sortedByLength[0].textContent.trim();
+                    }
+                  }
+
+                  // Only add if we have meaningful text
+                  if (text && text.length > 5) {
+                    results.push({
+                      rating,
+                      title: 'Iceland Product Review', // Iceland reviews don't have titles
+                      date,
+                      text
+                    });
+                  }
+                } catch (e) {
+                  console.error('Error processing review container:', e);
+                }
+              }
+
+              return results;
+            });
+
+            // Filter out reviews we already have to avoid duplicates
+            const existingTexts = new Set(global.icelandReviews.map(r => r.text));
+            const uniqueNewReviews = nextPageReviews.filter(r => !existingTexts.has(r.text));
+
+            if (uniqueNewReviews.length > 0) {
+              log.info(`Found ${uniqueNewReviews.length} new reviews after clicking Show More (${nextPageReviews.length - uniqueNewReviews.length} duplicates filtered out)`);
+              global.icelandReviews = global.icelandReviews.concat(uniqueNewReviews);
+              log.info(`Total reviews so far: ${global.icelandReviews.length}`);
+            } else {
+              log.warning(`No new reviews found after clicking Show More, stopping pagination`);
+              break;
+            }
+          } else {
+            log.info('Could not click Show More Reviews button, stopping pagination');
+            break;
+          }
+        }
+      }
+    } else {
+      log.warning('No reviews found on first page');
+    }
+
+    // Take a final screenshot
+    await page.screenshot({ path: `iceland-final-${Date.now()}.png` });
+
+    // Log the results
+    log.info(`Extracted a total of ${global.icelandReviews.length} reviews from Iceland site`);
+
+    // No fallbacks - only use actual reviews
+    if (global.icelandReviews.length === 0) {
+      log.warning('No Iceland reviews found. NOT adding fallback reviews.');
+    }
+  } catch (error) {
+    log.error(`Error in Iceland handler: ${error.message}\n${error.stack}`);
+
+    // No fallbacks - only use actual reviews
+    if (global.icelandReviews.length === 0) {
+      log.warning('Error occurred and no reviews were found. NOT adding fallback reviews.');
+    }
+  }
+
+  return global.icelandReviews;
+}
+
 module.exports = {
   scrapeReviews,
   extractReviews,
@@ -1597,6 +2282,7 @@ module.exports = {
   handleSainsburysSite,
   handleAsdaSite,
   handleMorrisonsSite,
+  handleIcelandSite,
   handleGenericSite,
   autoScroll,
   parseReviewDate
