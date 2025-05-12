@@ -1,786 +1,465 @@
-// Sainsbury's specific handler
-// Sainsbury's specific handler
+// Sainsbury's specific handler - Anti-Automation Resistant Version
 async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
   const log = siteConfig.log || console;
-  log.info('Using Sainsbury\'s specific handler');
+  log.info('Using Sainsbury\'s specific handler with direct API access');
 
-  // Initialize global array for Sainsbury\'s reviews if not exists
+  // Initialize global array for Sainsbury's reviews if not exists
   if (!global.sainsburysReviews) {
     global.sainsburysReviews = [];
   }
 
   // Clear any existing reviews to avoid duplicates
   global.sainsburysReviews = [];
-
-  // Enhanced anti-bot detection for Sainsbury's specific environment
-  await page.addInitScript(() => {
-    // Override navigator properties more thoroughly for Sainsbury's
-    const newProto = navigator.__proto__;
-    delete newProto.webdriver;
-    
-    // Add more realistic navigator properties
-    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-    Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
-    Object.defineProperty(navigator, 'connection', { 
-      get: () => ({
-        effectiveType: '4g',
-        rtt: 50,
-        downlink: 10,
-        saveData: false
-      })
-    });
-    
-    // Override canvas fingerprinting
-    const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-    HTMLCanvasElement.prototype.toDataURL = function(type) {
-      if (type === 'image/png' && this.width === 16 && this.height === 16) {
-        // This is likely a fingerprinting attempt, return a consistent result
-        return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-      }
-      return originalToDataURL.apply(this, arguments);
-    };
-  });
-
+  
   try {
-    // Take a screenshot for debugging
-    await page.screenshot({ path: `sainsburys-initial-${Date.now()}.png` });
-
-    // Wait for Cloudflare or similar protection to resolve
-    try {
-      // Check for common challenge elements
-      const challengeSelector = '#challenge-running, .cf-browser-verification, iframe[src*="challenges"], #cf-please-wait';
-      const hasChallenge = await page.$(challengeSelector) !== null;
+    // Instead of navigating through the site, let's extract the product ID from the URL
+    const url = page.url();
+    log.info(`Extracting product ID from URL: ${url}`);
+    
+    // Extract product ID from the URL directly
+    let productId = null;
+    const urlPathMatch = url.match(/\/([^\/]+)(?:\.html)?$/);
+    if (urlPathMatch && urlPathMatch[1]) {
+      productId = urlPathMatch[1];
+      log.info(`Extracted product ID from URL: ${productId}`);
+    }
+    
+    // If we can't get the ID from the URL, try one quick page load to extract it
+    if (!productId) {
+      log.info('Could not extract product ID from URL, trying with minimal page load');
       
-      if (hasChallenge) {
-        log.info('Detected Cloudflare or similar protection challenge, waiting for resolution...');
-        // Wait longer for the challenge to complete - up to 30 seconds
-        await page.waitForSelector(challengeSelector, { hidden: true, timeout: 30000 })
-          .catch(e => log.warning(`Challenge wait timed out: ${e.message}`));
+      // Use a completely clean browser context with a different user agent
+      const context = await page.context().browser().newContext({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        viewport: { width: 1280, height: 800 },
+        javaScriptEnabled: true
+      });
+      
+      // Create a new page with minimal fingerprint
+      const minimalPage = await context.newPage();
+      
+      // Set minimal headers
+      await minimalPage.setExtraHTTPHeaders({
+        'Accept-Language': 'en-GB,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      });
+      
+      // Try a very quick load just to get the page source
+      try {
+        const response = await minimalPage.goto(url, { 
+          timeout: 15000,
+          waitUntil: 'domcontentloaded'
+        });
         
-        // Additional wait after challenge completion
-        await page.waitForTimeout(5000);
-        log.info('Challenge appears to be resolved, continuing...');
-      }
-    } catch (challengeError) {
-      log.warning(`Error handling protection challenge: ${challengeError.message}`);
-    }
-
-    // First, handle cookie consent if present
-try {
-  const cookieButton = await page.$('#onetrust-accept-btn-handler, button:has-text("Accept all cookies"), button[id*="accept-cookies"]');
-  if (cookieButton) {
-    log.info('Found cookie consent button, clicking...');
-    
-    // First hover over the button like a human would
-    await cookieButton.hover();
-    await page.waitForTimeout(Math.random() * 800 + 200);
-    
-    // Move mouse slightly within the button before clicking (more human-like)
-    const box = await cookieButton.boundingBox();
-    if (box) {
-      const x = box.x + box.width/2 + (Math.random() * 10 - 5);
-      const y = box.y + box.height/2 + (Math.random() * 6 - 3);
-      await page.mouse.move(x, y);
-      await page.waitForTimeout(Math.random() * 400 + 100);
-    }
-    
-    // Click with a more natural delay pattern
-    await cookieButton.click({delay: Math.random() * 80 + 30}).catch(async e => {
-      log.warning(`Direct cookie click failed: ${e.message}, trying JS click...`);
-      await page.evaluate(btn => btn.click(), cookieButton);
-    });
-    
-    // Longer random wait after clicking (humans don't act immediately)
-    await page.waitForTimeout(Math.random() * 3000 + 2000);
-  }
-} catch (cookieError) {
-  log.warning(`Error handling cookie consent: ${cookieError.message}`);
-}
-
-    // Wait for the page to load and check for error message
-    await page.waitForTimeout(3000);
-    await page.waitForTimeout(Math.random() * 3000 + 2000); // Add random delay after initial wait
-
-
-    // Check if the "Something went wrong" message is present
-    const errorMessage = await page.$('text="Something went wrong"');
-    if (errorMessage) {
-      log.warning('Sainsbury\'s page likely blocked, "Something went wrong" message detected.');
-      return []; // Return empty array if blocked
-    }
-
-    // Scroll down to load lazy-loaded content
-    await page.evaluate(async () => {
-      await new Promise((resolve) => {
-        let totalHeight = 0;
-        const distance = 100;
-        const timer = setInterval(() => {
-          const scrollHeight = document.body.scrollHeight;
-          window.scrollBy(0, distance);
-          totalHeight += distance;
-
-          if (totalHeight >= scrollHeight - window.innerHeight) {
-            clearInterval(timer);
-            resolve();
-          }
-        }, 100);
-      });
-    });
-    await page.waitForTimeout(Math.random() * 2000 + 1000); // Add random delay after scrolling
-
-
-    // Look for and click on the reviews accordion/tab
-    const reviewsAccordionSelectors = [
-      '[data-testid="reviews-accordion"]',
-      'button:has-text("Reviews")',
-      'a:has-text("Reviews")',
-      '[data-testid="tab-reviews"]',
-      '[aria-controls="reviews-panel"]',
-      'a[href="#reviews"]',
-      'button[aria-controls="reviews"]',
-      'div[role="tab"]:has-text("Reviews")',
-      '.pd-reviews__header', // Common container for header/button
-      '.reviews-accordion-button' // Potential specific class
-    ];
-
-    let accordionClicked = false;
-    for (const selector of reviewsAccordionSelectors) {
-      try {
-        const reviewsAccordion = await page.$(selector);
-        if (reviewsAccordion) {
-          log.info(`Found reviews accordion/tab with selector: ${selector}`);
-          // Scroll to the element first
-          await reviewsAccordion.scrollIntoViewIfNeeded();
-          await page.waitForTimeout(Math.random() * 1000 + 500); // Add random delay before clicking
-
-          // Try clicking
-          await reviewsAccordion.click({ force: true }).catch(async (e) => {
-            log.warning(`Direct accordion/tab click failed: ${e.message}, trying JavaScript click...`);
-            await page.evaluate(button => button.click(), reviewsAccordion);
+        if (response && response.status() === 200) {
+          // Try to extract product ID from the HTML
+          productId = await minimalPage.evaluate(() => {
+            // Look for product ID in various locations
+            const metaProduct = document.querySelector('meta[property="product:id"], meta[name="product:id"], meta[name="product-id"]');
+            if (metaProduct) return metaProduct.getAttribute('content');
+            
+            // Try to find it in JSON-LD data
+            const jsonLd = document.querySelector('script[type="application/ld+json"]');
+            if (jsonLd) {
+              try {
+                const data = JSON.parse(jsonLd.textContent);
+                if (data && data.productID) return data.productID;
+                if (data && data.sku) return data.sku;
+              } catch(e) {}
+            }
+            
+            // Try data attributes
+            const productElement = document.querySelector('[data-product-id], [data-pid], [data-product-sku]');
+            if (productElement) {
+              return productElement.getAttribute('data-product-id') || 
+                     productElement.getAttribute('data-pid') || 
+                     productElement.getAttribute('data-product-sku');
+            }
+            
+            // Look for it in the URL path
+            const pathSegments = window.location.pathname.split('/');
+            const lastSegment = pathSegments[pathSegments.length - 1].replace('.html', '');
+            if (lastSegment && /^[a-z0-9\-]+$/i.test(lastSegment)) {
+              return lastSegment;
+            }
+            
+            return null;
           });
-
-          log.info(`Clicked reviews accordion/tab with selector: ${selector}`);
-          await page.waitForTimeout(Math.random() * 2000 + 1000); // Add random delay after clicking
-          accordionClicked = true;
-          break;
-        }
-      } catch (e) {
-        log.warning(`Error clicking accordion/tab with selector ${selector}: ${e.message}`);
-      }
-    }
-
-    if (!accordionClicked) {
-      // Try JavaScript approach to find and click the accordion/tab
-      log.info('Trying JavaScript approach to click reviews accordion/tab...');
-      const clicked = await page.evaluate(() => {
-        // Try to find any element that might be the reviews accordion/tab
-        // Removed :contains() as it's not standard CSS
-        const possibleAccordions = Array.from(document.querySelectorAll('button[aria-controls*="reviews"], a[href*="#reviews"], [data-testid*="reviews"], div[role="tab"], button, a'));
-        for (const acc of possibleAccordions) {
-          // Check text content manually
-          if (acc.textContent.includes('Review') || acc.textContent.includes('review')) {
-            console.log('Found reviews accordion/tab via JavaScript, clicking...');
-            acc.click();
-            return true;
+          
+          if (productId) {
+            log.info(`Successfully extracted product ID: ${productId}`);
           }
         }
-        return false;
-      });
-
-      if (clicked) {
-        log.info('Successfully clicked reviews accordion/tab via JavaScript');
-        await page.waitForTimeout(Math.random() * 2000 + 1000); // Add random delay after clicking
-      } else {
-        log.warning('Could not find reviews accordion/tab with any method');
-        // If we can't click the accordion/tab, the reviews won't load, so return empty
-        log.warning('Could not find reviews section on Sainsbury\'s page. Page might be blocked or structure changed.');
-        return [];
-      }
-    }
-
-
-    // Wait for a potential reviews section element to appear with a longer timeout
-    const reviewsSectionSelector = '.product-reviews, #reviews, [data-testid="reviews-accordion"], .pd-reviews, div[id="reviews"], section[id="reviews"], div[class*="Reviews"]';
-    // Also wait for at least one review container within that section to be visible
-    const reviewContainerSelector = 'div.pd-reviews__review-container, div[id^="id_"], .review-container, .review, [data-testid="review-container"], [class*="review-container"], [class*="ReviewContainer"]';
-
-    let reviewsSection = null;
-    try {
-      log.info(`Waiting for reviews section with selector: ${reviewsSectionSelector}`);
-      // Explicitly wait for the main reviews section element to be visible
-      reviewsSection = await page.waitForSelector(reviewsSectionSelector, { state: 'visible', timeout: 15000 }); // Wait up to 15 seconds for visibility
-      log.info('Found reviews section on Sainsbury\'s page after waiting');
-
-      // Now wait for at least one review container within the section to be visible
-      log.info(`Waiting for at least one review container with selector: ${reviewContainerSelector}`);
-      await page.waitForSelector(reviewContainerSelector, { state: 'visible', timeout: 10000 }); // Wait up to 10 seconds for a review container
-      log.info('Found at least one review container after waiting');
-
-    } catch (e) {
-      log.warning(`Could not find reviews section or review containers on Sainsbury\'s page after waiting: ${e.message}. Page might be blocked or structure changed.`);
-      // Return empty array immediately if reviews section or containers are not found after waiting
-      return [];
-    }
-
-    // If reviewsSection is found (which it should be if waitForSelector didn't throw)
-    if (reviewsSection) {
-      log.info('Processing found reviews section');
-
-      // Click to expand the reviews section if it's collapsed
-      // This block is now redundant as we handle clicking the accordion/tab earlier
-      // Keeping it for now but might remove later if the above logic is sufficient
-      try {
-        const reviewsAccordion = await page.$('[data-testid="reviews-accordion"], button:has-text("Reviews"), a:has-text("Reviews"), [data-testid="tab-reviews"], [aria-controls="reviews-panel"], a[href="#reviews"], button[aria-controls="reviews"], div[role="tab"]:has-text("Reviews")');
-        if (reviewsAccordion && await reviewsAccordion.isVisible()) { // Check visibility before clicking again
-           // log.info('Found reviews accordion again, clicking to expand...');
-           // await reviewsAccordion.scrollIntoViewIfNeeded();
-           // await page.waitForTimeout(Math.random() * 1000 + 500); // Add random delay before clicking accordion
-           // await reviewsAccordion.click().catch(async (e) => {
-           //   log.warning(`Direct click failed: ${e.message}, trying JavaScript click...`);
-           //   await page.evaluate(button => button.click(), reviewsAccordion);
-           // });
-           // await page.waitForTimeout(Math.random() * 2000 + 1000); // Add random delay after clicking accordion
-        }
       } catch (e) {
-        log.warning(`Error expanding reviews accordion: ${e.message}`);
+        log.warning(`Error during minimal page load: ${e.message}`);
+      } finally {
+        await minimalPage.close();
+        await context.close();
       }
     }
-
-    // Take a screenshot after expanding reviews and waiting for containers
-    await page.screenshot({ path: `sainsburys-after-expand-wait-${Date.now()}.png` });
-
-
-    // Check if there are pagination controls
-    const hasPagination = await page.evaluate(() => {
-      return !!document.querySelector('.pagination, [data-testid="pagination"], ul.pagination, [data-testid="pagination"], nav[class*="Pagination"], div[class*="pagination"]');
-    });
-
-    if (hasPagination) {
-      log.info('Found pagination controls, will navigate through pages');
-
-      // Click through pagination to load more reviews
-      let pageCount = 0;
-      const maxPages = 5; // Limit to 5 pages to avoid infinite loops
-
-      while (pageCount < maxPages && global.sainsburysReviews.length < maxReviews) {
-        // Extract reviews from current page
-        const pageReviews = await extractSainsburysReviews(page);
-        log.info(`Extracted ${pageReviews.length} reviews from page ${pageCount + 1}`);
-
-        if (pageReviews.length > 0) {
-          global.sainsburysReviews.push(...pageReviews);
-        }
-
-        // Check if we've reached the maximum number of reviews
-        if (global.sainsburysReviews.length >= maxReviews) {
-          log.info(`Reached maximum number of reviews (${maxReviews}), stopping pagination`);
-          break;
-        }
-
-        // Try to click the "Next" button with multiple selectors and fallbacks
-        const nextButtonSelectors = [
-          '[data-testid="pagination-next"]',
-          '.pagination-next',
-          'button:has-text("Next")',
-          'a:has-text("Next")',
-          '[data-testid="pagination-next"]',
-          'a[class*="PaginationNext"]',
-          'li.next a',
-          'a[aria-label="Next page"]',
-          '.ds-pagination__next' // Sainsbury's specific next button selector
+    
+    // If we still don't have a product ID, try to parse it from the URL parts
+    if (!productId) {
+      const urlParts = url.split('/');
+      productId = urlParts[urlParts.length - 1].replace('.html', '');
+      log.info(`Using URL last segment as product ID: ${productId}`);
+    }
+    
+    // Now try to access the reviews API directly using the product ID
+    if (productId) {
+      // Create a fresh browser context for API access
+      const apiContext = await page.context().browser().newContext({
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
+      });
+      
+      const apiPage = await apiContext.newPage();
+      
+      // Set appropriate headers for API request
+      await apiPage.setExtraHTTPHeaders({
+        'Accept': 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'en-GB,en;q=0.9',
+        'Origin': 'https://www.sainsburys.co.uk',
+        'Referer': 'https://www.sainsburys.co.uk/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-site',
+        'DNT': '1',
+        'X-Requested-With': 'XMLHttpRequest'
+      });
+      
+      try {
+        // Attempt multiple API endpoints and formats to find reviews
+        const apiEndpoints = [
+          // Standard format
+          `https://reviews.sainsburys-groceries.co.uk/data/reviews.json?ApiVersion=5.4&Filter=ProductId%3A${productId}&Offset=0&Limit=${maxReviews}`,
+          // Try with different parameter format
+          `https://reviews.sainsburys-groceries.co.uk/data/reviews.json?ApiVersion=5.4&Filter=ProductId=${productId}&Offset=0&Limit=${maxReviews}`,
+          // Try with product code format
+          `https://reviews.sainsburys-groceries.co.uk/data/reviews.json?ApiVersion=5.4&Filter=ProductCode%3A${productId}&Offset=0&Limit=${maxReviews}`
         ];
-
-        let nextButton = null;
-        for (const selector of nextButtonSelectors) {
-          nextButton = await page.$(selector);
-          if (nextButton) {
-            log.info(`Found next button with selector: ${selector}`);
-            break;
-          }
-        }
-
-        // If we still don't have a next button, try a more aggressive JavaScript approach
-        if (!nextButton) {
-          log.info('No next button found with standard selectors, trying aggressive JavaScript approach');
-
-          const nextButtonFound = await page.evaluate(() => {
-            const possibleNextButtons = [];
-
-            // Look for elements with specific attributes or text
-            // Removed :contains() as it's not standard CSS
-            document.querySelectorAll('a[href*="page="], a[href*="%2Fpage%3D"], [aria-label*="Next page"]').forEach(el => possibleNextButtons.push(el));
-
-            // Look for elements with right arrow icons
-            document.querySelectorAll('a svg, button svg').forEach(svg => {
-              const parent = svg.closest('a') || svg.closest('button');
-              if (parent && !possibleNextButtons.includes(parent)) {
-                possibleNextButtons.push(parent);
-              }
-            });
-
-            // Look for elements with pagination-related classes
-            document.querySelectorAll('[class*="pagination"], [class*="Pagination"], [class*="paging"], [class*="Paging"]').forEach(el => {
-              if (!possibleNextButtons.includes(el)) {
-                possibleNextButtons.push(el);
-              }
-            });
-
-            // Find the most likely next button
-            for (const button of possibleNextButtons) {
-              // Check if it has text or attributes suggesting it's a next button
-              const text = button.textContent.toLowerCase();
-              const hasNextText = text.includes('next') || text.includes('>');
-              const hasRightArrow = button.querySelector('svg') !== null;
-              const hasNextClass = button.className.includes('right') || button.className.includes('next');
-              const hasNextAttribute = button.getAttribute('aria-label')?.toLowerCase().includes('next') ||
-                                      button.getAttribute('data-auto-id')?.toLowerCase().includes('right');
-
-              if (hasNextText || hasRightArrow || hasNextClass || hasNextAttribute) {
-                console.log('Found likely next button via JS:', button);
-                button.click();
-                return true;
-              }
-            }
-            return false;
+        
+        for (const endpoint of apiEndpoints) {
+          log.info(`Trying API endpoint: ${endpoint}`);
+          
+          const apiResponse = await apiPage.goto(endpoint, {
+            waitUntil: 'networkidle',
+            timeout: 20000
+          }).catch(e => {
+            log.warning(`API request failed: ${e.message}`);
+            return null;
           });
-
-          if (nextButtonFound) {
-            log.info('Found and clicked next button using JavaScript approach');
-            await page.waitForTimeout(Math.random() * 3000 + 2000); // Wait for page to load
-            pageCount++;
-
-            // Take a screenshot after clicking next page
-            await page.screenshot({ path: `sainsburys-after-js-next-page-${pageCount}-${Date.now()}.png` });
-
-            // Extract reviews from the current page
-            reviews = await extractSainsburysReviews(page);
-            log.info(`Extracted ${reviews.length} reviews from page ${pageCount + 1}`);
-
-            if (reviews.length > 0) {
-              global.sainsburysReviews.push(...reviews);
-              log.info(`Total reviews collected so far: ${global.sainsburysReviews.length}`);
-              continue; // Skip to the next iteration
-            } else {
-              log.warning(`No reviews found on page ${pageCount + 1} after JS click, stopping pagination`);
-              break;
+          
+          if (apiResponse && apiResponse.status() === 200) {
+            // Try to parse the response as JSON
+            const responseText = await apiPage.content();
+            try {
+              const responseJson = JSON.parse(responseText);
+              
+              if (responseJson && responseJson.Results && responseJson.Results.length > 0) {
+                log.info(`Successfully retrieved ${responseJson.Results.length} reviews from API`);
+                
+                // Process the reviews
+                responseJson.Results.forEach(review => {
+                  global.sainsburysReviews.push({
+                    rating: review.Rating.toString(),
+                    title: review.Title || 'Review',
+                    date: review.SubmissionTime ? new Date(review.SubmissionTime).toLocaleDateString() : '',
+                    text: review.ReviewText || '',
+                    author: review.UserNickname || '',
+                    productId: productId,
+                    productName: review.ProductTitle || '',
+                    sourceUrl: url
+                  });
+                });
+                
+                // We found reviews, no need to try other endpoints
+                break;
+              }
+            } catch (e) {
+              log.warning(`Error parsing API response: ${e.message}`);
             }
-          } else {
-             log.info('No next page button found with any JavaScript method, stopping pagination');
-             break;
           }
         }
-
-
-        if (nextButton) {
-          const isDisabled = await page.evaluate(button => {
-            return button.disabled ||
-                   button.classList.contains('disabled') ||
-                   button.getAttribute('aria-disabled') === 'true';
-          }, nextButton);
-
-          if (isDisabled) {
-            log.info('Next button is disabled, reached the last page');
-            break;
-          }
-
-          log.info('Clicking next page button...');
-
-          // Take a screenshot before clicking
-          await page.screenshot({ path: `sainsburys-before-next-page-${pageCount}-${Date.now()}.png` });
-
-          // Scroll to make sure the button is visible
-          await nextButton.scrollIntoViewIfNeeded();
-          await page.waitForTimeout(Math.random() * 1000 + 500); // Add random delay before clicking next
-
-          // Try multiple click methods
-          try {
-            // Method 1: Direct click
-            await nextButton.click({ force: true }).catch(async (e) => {
-              log.warning(`Direct click failed: ${e.message}, trying other methods...`);
-
-              // Method 2: JavaScript click
-              await page.evaluate(button => button.click(), nextButton).catch(async (e) => {
-                log.warning(`JavaScript click failed: ${e.message}, trying href navigation...`);
-
-                // Method 3: Extract href and navigate
-                const href = await page.evaluate(button => button.getAttribute('href'), nextButton);
-                if (href) {
-                  const currentUrl = page.url();
-                  const baseUrl = currentUrl.split('?')[0];
-                  let targetUrl;
-
-                  if (href.startsWith('http')) {
-                    targetUrl = href;
-                  } else if (href.startsWith('/')) {
-                    const domain = currentUrl.split('/').slice(0, 3).join('/');
-                    targetUrl = domain + href;
-                  } else {
-                    // Handle relative URLs like %2Fproduct%2F...
-                    const decodedHref = decodeURIComponent(href);
-                    if (decodedHref.startsWith('/')) {
-                      const domain = currentUrl.split('/').slice(0, 3).join('/');
-                      targetUrl = domain + decodedHref;
-                    } else {
-                      // Fallback: just append to current URL
-                      targetUrl = baseUrl + '?page=' + (pageCount + 1);
-                    }
-                  }
-
-                  log.info(`Navigating to next page URL: ${targetUrl}`);
-                  await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-                } else {
-                   log.warning('Could not extract href for navigation, stopping pagination');
-                }
-              });
-            });
-          } catch (clickError) {
-            log.error(`All click methods failed: ${clickError.message}, stopping pagination`);
-            break;
-          }
-
-          await page.waitForTimeout(Math.random() * 2000 + 1000); // Wait longer for page to load
-          pageCount++;
-
-          // Take a screenshot after clicking next page
-          await page.screenshot({ path: `sainsburys-after-next-page-${pageCount}-${Date.now()}.png` });
-
-          // Extract reviews from the current page
-          reviews = await extractSainsburysReviews(page);
-          log.info(`Extracted ${reviews.length} reviews from page ${pageCount + 1}`);
-
-          if (reviews.length > 0) {
-            global.sainsburysReviews.push(...reviews);
-            log.info(`Total reviews collected so far: ${global.sainsburysReviews.length}`);
-          } else {
-            log.warning(`No reviews found on page ${pageCount + 1} after click, stopping pagination`);
-            break;
-          }
-        } else {
-          log.info('No next page button found, reached the last page');
-          break;
-        }
-      }
-    } else {
-      // No pagination, extract all reviews from the single page
-      const reviews = await extractSainsburysReviews(page);
-      log.info(`Extracted ${reviews.length} reviews from single page`);
-
-      if (reviews.length > 0) {
-        global.sainsburysReviews.push(...reviews);
+      } finally {
+        await apiPage.close();
+        await apiContext.close();
       }
     }
-
-    log.info(`Total extracted ${global.sainsburysReviews.length} reviews from Sainsbury's site`);
-
-    // --- Fallback reviews removed as requested ---
-    // If we didn't find any reviews, log a warning
+    
+    // If direct API access didn't work, fall back to DOM extraction as a last resort
     if (global.sainsburysReviews.length === 0) {
-      log.warning('No Sainsbury\'s reviews found after attempting to scrape.');
+      log.info('API extraction failed, attempting DOM extraction as last resort');
+      
+      // Check if we still have a usable page
+      let needsNewPage = true;
+      try {
+        const isUsable = await page.evaluate(() => true).catch(() => false);
+        needsNewPage = !isUsable;
+      } catch (e) {
+        needsNewPage = true;
+      }
+      
+      if (needsNewPage) {
+        const domContext = await page.context().browser().newContext({
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          bypassCSP: true
+        });
+        
+        const domPage = await domContext.newPage();
+        await domPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => {
+          log.warning(`Failed to load page for DOM extraction: ${e.message}`);
+        });
+        
+        // Try to extract reviews from DOM
+        try {
+          const reviews = await extractSainsburysReviews(domPage);
+          if (reviews.length > 0) {
+            log.info(`Extracted ${reviews.length} reviews from DOM`);
+            global.sainsburysReviews.push(...reviews);
+          }
+        } catch (e) {
+          log.error(`DOM extraction failed: ${e.message}`);
+        } finally {
+          await domPage.close();
+          await domContext.close();
+        }
+      } else {
+        // Use existing page for DOM extraction
+        try {
+          const reviews = await extractSainsburysReviews(page);
+          if (reviews.length > 0) {
+            log.info(`Extracted ${reviews.length} reviews from DOM`);
+            global.sainsburysReviews.push(...reviews);
+          }
+        } catch (e) {
+          log.error(`DOM extraction failed with existing page: ${e.message}`);
+        }
+      }
     }
-    // --- End of fallback reviews removal ---
-
+    
+    log.info(`Total extracted ${global.sainsburysReviews.length} reviews for Sainsbury's`);
+    
   } catch (error) {
     log.error(`Error in Sainsbury's handler: ${error.message}\n${error.stack}`);
-
-    // If we encountered an error and found no reviews, log a warning
-    if (global.sainsburysReviews.length === 0) {
-      log.warning('Error occurred and no reviews were found for Sainsbury\'s.');
-    }
   }
-
+  
   return global.sainsburysReviews;
 }
 
-// Helper function to extract reviews from the current page
+// Helper function to extract reviews from the DOM
 async function extractSainsburysReviews(page) {
   return await page.evaluate(() => {
-    console.log('Starting Sainsbury\'s review extraction with exact HTML structure');
+    console.log('Starting Sainsbury\'s review extraction from DOM');
     const results = [];
-
-    // Based on the exact HTML structure provided
-    // First, look for the review containers
-    const reviewContainers = document.querySelectorAll('div.pd-reviews__review-container, div[id^="id_"]');
-    console.log(`Found ${reviewContainers.length} Sainsbury's review containers with exact selector`);
-
-    // If no containers found, try to find them by ID pattern
-    if (reviewContainers.length === 0) {
-      // Look for divs with IDs that start with 'id_' which is common for Sainsbury's reviews
-      const idDivs = Array.from(document.querySelectorAll('div[id]')).filter(div => div.id.startsWith('id_'));
-      console.log(`Found ${idDivs.length} divs with IDs starting with 'id_'`);
-
-      if (idDivs.length > 0) {
-        // Process these divs directly
-        for (const div of idDivs) {
-          try {
-            // Find the review div inside or use the div itself
-            const reviewDiv = div.querySelector('div.review') || div;
-
-            // Extract title
-            let title = '';
-            const titleElement = reviewDiv.querySelector('div.review__title, .review__title');
-            if (titleElement) {
-              title = titleElement.textContent.trim();
-              console.log(`Extracted title from ID div: "${title}"`);
-            }
-
-            // Extract review text
-            let text = '';
-            const textElement = reviewDiv.querySelector('div.review__content, [data-testid="review-content"]');
-            if (textElement) {
-              text = textElement.textContent.trim();
-              console.log(`Extracted text from ID div: "${text.substring(0, 30)}..."`);
-            }
-
-            // Extract rating
-            let rating = '5'; // Default
-            const ratingElement = reviewDiv.querySelector('div.review__star-rating, [title*="Rating"], [aria-label*="Rating"]');
-            if (ratingElement) {
-              const ariaLabel = ratingElement.getAttribute('aria-label');
-              const titleAttr = ratingElement.getAttribute('title');
-              const ratingText = ariaLabel || titleAttr || '';
-              const ratingMatch = ratingText.match(/Rating (\d+) out of/);
-              if (ratingMatch && ratingMatch[1]) {
+    
+    // Look for review elements (using multiple selector strategies)
+    const reviewSelectors = [
+      '.review, [class*="review-item"], [class*="review__container"]',
+      '[data-testid*="review"], [id*="review-item"]',
+      '.pd-reviews__review-container, div[id^="id_"]'
+    ];
+    
+    let reviewElements = [];
+    for (const selector of reviewSelectors) {
+      const elements = document.querySelectorAll(selector);
+      if (elements.length > 0) {
+        console.log(`Found ${elements.length} review elements with selector: ${selector}`);
+        reviewElements = Array.from(elements);
+        break;
+      }
+    }
+    
+    // If still no reviews found, try a more aggressive approach
+    if (reviewElements.length === 0) {
+      console.log('No review elements found with standard selectors, trying aggressive approach');
+      
+      // Look for any elements that might contain review content
+      const possibleReviews = Array.from(document.querySelectorAll('div, article'))
+        .filter(el => {
+          const text = el.innerText || '';
+          return (text.includes('stars') || text.includes('out of 5')) && 
+                 text.length > 100 && 
+                 !el.querySelector('iframe, script, style');
+        });
+      
+      console.log(`Found ${possibleReviews.length} possible review elements with aggressive approach`);
+      reviewElements = possibleReviews;
+    }
+    
+    // Process found elements
+    for (const element of reviewElements) {
+      try {
+        // Extract rating - multiple methods
+        let rating = '5'; // Default
+        
+        // Method 1: Look for elements with star ratings
+        const ratingSelectors = [
+          '[class*="rating"], [class*="stars"]',
+          '[aria-label*="out of 5"], [aria-label*="stars"]',
+          '[title*="out of 5"], [title*="stars"]'
+        ];
+        
+        for (const selector of ratingSelectors) {
+          const ratingEl = element.querySelector(selector);
+          if (ratingEl) {
+            // Try to extract from attributes first
+            const ariaLabel = ratingEl.getAttribute('aria-label');
+            const title = ratingEl.getAttribute('title');
+            const ratingText = ariaLabel || title || ratingEl.textContent;
+            
+            if (ratingText) {
+              const ratingMatch = ratingText.match(/(\d+(\.\d+)?)\s*(star|out of)/i);
+              if (ratingMatch) {
                 rating = ratingMatch[1];
-                console.log(`Extracted rating ${rating} from ID div aria-label/title`);
+                break;
               }
             }
-
-            // Extract date
-            let date = '';
-            const dateElement = reviewDiv.querySelector('div.review__date');
-            if (dateElement) {
-              date = dateElement.textContent.trim();
-              console.log(`Extracted date from ID div: "${date}"`);
-            }
-
-            // Only add if we have meaningful text or a rating
-            if (text || title) {
-              results.push({ rating, title, date, text });
-              console.log(`Added Sainsbury's review from ID div with rating ${rating}`);
-            }
-          } catch (e) {
-            console.error('Error processing Sainsbury\'s ID div:', e);
           }
         }
-      }
-    }
-
-    if (reviewContainers.length > 0) {
-      // Process each review container
-      for (const container of reviewContainers) {
-        try {
-          // Find the review div inside the container
-          const reviewDiv = container.querySelector('div.review');
-          if (!reviewDiv) continue;
-
-          // Extract title - div.review__title
-          let title = '';
-          const titleElement = reviewDiv.querySelector('div.review__title');
-          if (titleElement) {
-            title = titleElement.textContent.trim();
-            console.log(`Extracted title: "${title}"`);
+        
+        // Method 2: Count filled stars
+        if (rating === '5') {
+          const filledStars = element.querySelectorAll('.filled-star, [data-filled="true"], [class*="filled"], svg[class*="active"]').length;
+          if (filledStars > 0 && filledStars <= 5) {
+            rating = filledStars.toString();
           }
-
-          // Extract review text - div.review__content
-          let text = '';
-          const textElement = reviewDiv.querySelector('div.review__content[data-testid="review-content"]');
-          if (textElement) {
-            text = textElement.textContent.trim();
-            console.log(`Extracted text: "${text.substring(0, 30)}..."`);
+        }
+        
+        // Method 3: Scan text for rating patterns
+        if (rating === '5') {
+          const elementText = element.innerText;
+          const ratingTextMatch = elementText.match(/(\d+(\.\d+)?)\s*(star|out of\s*5)/i);
+          if (ratingTextMatch) {
+            rating = ratingTextMatch[1];
           }
-
-          // Extract rating - from the aria-label or title attribute
-          let rating = '5'; // Default to 5 stars
-          const ratingElement = reviewDiv.querySelector('div.review__star-rating .ds-c-rating__stars, [title*="Rating"], [aria-label*="Rating"]');
-          if (ratingElement) {
-            const ariaLabel = ratingElement.getAttribute('aria-label');
-            const titleAttr = ratingElement.getAttribute('title');
-            const ratingText = ariaLabel || titleAttr || '';
-            const ratingMatch = ratingText.match(/Rating (\d+) out of/);
-            if (ratingMatch && ratingMatch[1]) {
-              rating = ratingMatch[1];
-              console.log(`Extracted rating ${rating} from aria-label/title`);
+        }
+        
+        // Extract title - multiple methods
+        let title = '';
+        const titleSelectors = [
+          'h3, h4, h5, [class*="title"], [class*="heading"]',
+          '[class*="review-title"], [class*="review__title"]'
+        ];
+        
+        for (const selector of titleSelectors) {
+          const titleEl = element.querySelector(selector);
+          if (titleEl) {
+            title = titleEl.textContent.trim();
+            if (title) break;
+          }
+        }
+        
+        // If no title found, try to extract from first significant text
+        if (!title) {
+          const paragraphs = element.querySelectorAll('p, div');
+          for (const p of paragraphs) {
+            const text = p.textContent.trim();
+            if (text && text.length > 5 && text.length < 100) {
+              title = text;
+              break;
+            }
+          }
+        }
+        
+        // Extract text - find the longest paragraph or text block
+        let text = '';
+        const textSelectors = [
+          'p, [class*="content"], [class*="text"], [class*="body"]',
+          '[class*="review-text"], [class*="review__text"], [class*="review-content"], [class*="review__content"]'
+        ];
+        
+        for (const selector of textSelectors) {
+          const textElements = element.querySelectorAll(selector);
+          if (textElements.length > 0) {
+            // Find the longest text element
+            let longestText = '';
+            for (const el of textElements) {
+              const elText = el.textContent.trim();
+              if (elText.length > longestText.length) {
+                longestText = elText;
+              }
+            }
+            
+            if (longestText) {
+              text = longestText;
+              break;
+            }
+          }
+        }
+        
+        // If no specific text element found but element has substantial text
+        if (!text && element.textContent.length > 100) {
+          // Remove title from the element text if found
+          let fullText = element.textContent;
+          if (title) {
+            fullText = fullText.replace(title, '');
+          }
+          
+          // Remove common UI elements text
+          const commonUITexts = [
+            'Verified Purchase', 'Helpful', 'Report',
+            'Was this helpful?', 'Yes', 'No', 'Flag', 
+            'Share', 'Like', 'Comment', 'Reply'
+          ];
+          
+          for (const uiText of commonUITexts) {
+            fullText = fullText.replace(new RegExp(uiText, 'gi'), '');
+          }
+          
+          // Clean up and use as review text
+          text = fullText.replace(/\s+/g, ' ').trim();
+        }
+        
+        // Extract date
+        let date = '';
+        const dateSelectors = [
+          '[class*="date"], time, [datetime]',
+          '[class*="review-date"], [class*="review__date"]'
+        ];
+        
+        for (const selector of dateSelectors) {
+          const dateEl = element.querySelector(selector);
+          if (dateEl) {
+            // Try datetime attribute first
+            const datetime = dateEl.getAttribute('datetime');
+            if (datetime) {
+              date = new Date(datetime).toLocaleDateString();
             } else {
-              // Try to extract from text content
-              const ratingContentElement = reviewDiv.querySelector('.ds-c-rating__trailing-content');
-              if (ratingContentElement) {
-                const contentText = ratingContentElement.textContent.trim();
-                const contentMatch = contentText.match(/(\d+) out of/);
-                if (contentMatch && contentMatch[1]) {
-                  rating = contentMatch[1];
-                  console.log(`Extracted rating ${rating} from trailing content`);
-                }
-              }
+              date = dateEl.textContent.trim();
             }
+            
+            if (date) break;
           }
-
-          // Extract date - div.review__date
-          let date = '';
-          const dateElement = reviewDiv.querySelector('div.review__date');
-          if (dateElement) {
-            date = dateElement.textContent.trim();
-            console.log(`Extracted date: "${date}"`);
-          }
-
-          // Only add if we have meaningful text or a rating
-          if (text || rating) {
-            results.push({ rating, title, date, text });
-            console.log(`Added Sainsbury's review with rating ${rating}`);
-          }
-        } catch (e) {
-          console.error('Error processing Sainsbury\'s review container:', e);
         }
+        
+        // Extract author
+        let author = '';
+        const authorSelectors = [
+          '[class*="author"], [class*="nickname"], [class*="user"]',
+          '[class*="review-author"], [class*="review__author"]'
+        ];
+        
+        for (const selector of authorSelectors) {
+          const authorEl = element.querySelector(selector);
+          if (authorEl) {
+            author = authorEl.textContent.trim();
+            // Remove common prefixes
+            author = author.replace(/^(by|written by|posted by|from)/i, '').trim();
+            if (author) break;
+          }
+        }
+        
+        // Only add if we have meaningful text or title
+        if (text || (title && title.length > 10)) {
+          results.push({ rating, title, date, text, author });
+        }
+      } catch (e) {
+        console.error('Error extracting review from element:', e);
       }
     }
-
-    // If we didn't find any reviews with the exact structure, try a more generic approach
-    if (results.length === 0) {
-      console.log('No reviews found with exact structure, trying generic approach');
-
-      // Try multiple selector strategies
-      const selectorStrategies = [
-        // Strategy 1: Original selectors
-        {
-          container: 'div.review__content[data-testid="review-content"], .review-container',
-          rating: 'div.review__star-rating, .star-rating',
-          title: 'div.review__title, .review-title, h3, h4',
-          date: 'div.review__date, .review-date, .date',
-          text: 'div.review__text, .review-text, p'
-        },
-        // Strategy 2: Updated selectors based on actual Sainsbury's site
-        {
-          container: '.pd-reviews__review-container, .review, div[id^="id_"], .review-card, [data-testid="review-card"]',
-          rating: '.review__star-rating, .ds-c-rating, [aria-label*="Rating"], [title*="Rating"]',
-          title: '.review__title, div[class*="title"], h3, h4',
-          date: '.review__date, div[class*="date"], time',
-          text: '.review__content, [data-testid="review-content"], .review-content, div[class*="content"]'
-        },
-        // Strategy 3: More generic selectors
-        {
-          container: '[class*="review" i], [data-testid*="review" i], [id*="review" i]',
-          rating: '[class*="rating" i], [class*="stars" i], [data-testid*="rating" i]',
-          title: '[class*="title" i], [data-testid*="title" i], h3, h4',
-          date: '[class*="date" i], [data-testid*="date" i], time',
-          text: '[class*="text" i], [class*="content" i], [data-testid*="text" i], p'
-        }
-      ];
-
-      // Try each strategy until we find reviews
-      for (const strategy of selectorStrategies) {
-        console.log(`Trying selector strategy: ${JSON.stringify(strategy)}`);
-
-        // Find all review containers using the current strategy
-        const reviewContainers = document.querySelectorAll(strategy.container);
-        console.log(`Found ${reviewContainers.length} Sainsbury's review containers with exact selector`);
-
-        // If we found containers, process them
-        if (reviewContainers.length > 0) {
-          // Process each review container
-          for (const container of reviewContainers) {
-            try {
-              // Extract rating
-              let rating = '5'; // Default to 5 stars
-              const ratingElement = container.querySelector(strategy.rating);
-              if (ratingElement) {
-                // Try to extract from text content
-                const ratingText = ratingElement.textContent.trim();
-                const ratingMatch = ratingText.match(/\d+/);
-                if (ratingMatch) {
-                  rating = ratingMatch[0];
-                  console.log(`Extracted rating ${rating} from text content`);
-                } else {
-                  // Try to count filled stars
-                  const filledStars = ratingElement.querySelectorAll('.filled-star, [data-filled="true"], [class*="filled"]').length;
-                  if (filledStars > 0) {
-                    rating = filledStars.toString();
-                    console.log(`Extracted rating ${rating} from filled stars count`);
-                  }
-                }
-              }
-
-              // Extract title
-              let title = '';
-              const titleElement = container.querySelector(strategy.title);
-              if (titleElement) {
-                title = titleElement.textContent.trim();
-                console.log(`Extracted title: "${title}"`);
-              }
-
-              // Extract date
-              let date = '';
-              const dateElement = container.querySelector(strategy.date);
-              if (dateElement) {
-                date = dateElement.textContent.trim();
-                console.log(`Extracted date: "${date}"`);
-              }
-
-              // Extract review text
-              let text = '';
-              const textElement = container.querySelector(strategy.text);
-              if (textElement) {
-                text = textElement.textContent.trim();
-                console.log(`Extracted text: "${text.substring(0, 30)}..."`);
-              }
-
-              // Only add if we have meaningful text or a rating
-              if (text || rating) {
-                results.push({ rating, title, date, text });
-                console.log(`Added Sainsbury's review with rating ${rating}`);
-              }
-            } catch (e) {
-              console.error('Error processing Sainsbury\'s review container:', e);
-            }
-          }
-
-          // If we found reviews with this strategy, stop trying others
-          if (results.length > 0) {
-            console.log(`Found ${results.length} reviews with strategy, stopping search`);
-            break;
-          }
-        }
-      }
-    }
-
-    // If we still don't have reviews, try a more aggressive approach
-    if (results.length === 0) {
-      console.log('No reviews found with standard strategies, trying aggressive approach');
-
-      // Look for any elements that might contain review text
-      const possibleReviewTexts = document.querySelectorAll('p, div, span');
-      for (const element of possibleReviewTexts) {
-        const text = element.textContent.trim();
-
-        // If the text is reasonably long and not a navigation element, it might be a review
-        if (text.length > 50 &&
-            !element.closest('nav') &&
-            !element.closest('header') &&
-            !element.closest('footer') &&
-            !['script', 'style', 'meta', 'link'].includes(element.tagName.toLowerCase())) {
-
-          console.log(`Found possible review text: "${text.substring(0, 30)}..."`);
-
-          // Try to find a nearby rating element
-          let rating = '5'; // Default
-          const nearbyRating = element.parentElement?.querySelector('[class*="star"], [class*="rating"]');
-          if (nearbyRating) {
-            console.log('Found nearby rating element');
-          }
-
-          // Add as a potential review
-          results.push({
-            rating,
-            title: 'Product Review', // Default
-            date: '',
-            text
-          });
-
-          // Limit to 5 reviews from this aggressive approach
-          if (results.length >= 5) break;
-        }
-      }
-    }
-
-    console.log(`Returning ${results.length} Sainsbury's reviews`);
+    
     return results;
   });
 }
