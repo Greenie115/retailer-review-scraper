@@ -1,4 +1,5 @@
 // Sainsbury's specific handler
+// Sainsbury's specific handler
 async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
   const log = siteConfig.log || console;
   log.info('Using Sainsbury\'s specific handler');
@@ -11,21 +12,90 @@ async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
   // Clear any existing reviews to avoid duplicates
   global.sainsburysReviews = [];
 
+  // Enhanced anti-bot detection for Sainsbury's specific environment
+  await page.addInitScript(() => {
+    // Override navigator properties more thoroughly for Sainsbury's
+    const newProto = navigator.__proto__;
+    delete newProto.webdriver;
+    
+    // Add more realistic navigator properties
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+    Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+    Object.defineProperty(navigator, 'connection', { 
+      get: () => ({
+        effectiveType: '4g',
+        rtt: 50,
+        downlink: 10,
+        saveData: false
+      })
+    });
+    
+    // Override canvas fingerprinting
+    const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function(type) {
+      if (type === 'image/png' && this.width === 16 && this.height === 16) {
+        // This is likely a fingerprinting attempt, return a consistent result
+        return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+      }
+      return originalToDataURL.apply(this, arguments);
+    };
+  });
+
   try {
     // Take a screenshot for debugging
     await page.screenshot({ path: `sainsburys-initial-${Date.now()}.png` });
 
-    // First, handle cookie consent if present
+    // Wait for Cloudflare or similar protection to resolve
     try {
-      const cookieButton = await page.$('#onetrust-accept-btn-handler, button:has-text("Accept all cookies"), button[id*="accept-cookies"]');
-      if (cookieButton) {
-        log.info('Found cookie consent button, clicking...');
-        await cookieButton.click().catch(e => log.warning(`Cookie click failed: ${e.message}`));
-        await page.waitForTimeout(Math.random() * 2000 + 1000); // Add random delay after cookie click
+      // Check for common challenge elements
+      const challengeSelector = '#challenge-running, .cf-browser-verification, iframe[src*="challenges"], #cf-please-wait';
+      const hasChallenge = await page.$(challengeSelector) !== null;
+      
+      if (hasChallenge) {
+        log.info('Detected Cloudflare or similar protection challenge, waiting for resolution...');
+        // Wait longer for the challenge to complete - up to 30 seconds
+        await page.waitForSelector(challengeSelector, { hidden: true, timeout: 30000 })
+          .catch(e => log.warning(`Challenge wait timed out: ${e.message}`));
+        
+        // Additional wait after challenge completion
+        await page.waitForTimeout(5000);
+        log.info('Challenge appears to be resolved, continuing...');
       }
-    } catch (cookieError) {
-      log.warning(`Error handling cookie consent: ${cookieError.message}`);
+    } catch (challengeError) {
+      log.warning(`Error handling protection challenge: ${challengeError.message}`);
     }
+
+    // First, handle cookie consent if present
+try {
+  const cookieButton = await page.$('#onetrust-accept-btn-handler, button:has-text("Accept all cookies"), button[id*="accept-cookies"]');
+  if (cookieButton) {
+    log.info('Found cookie consent button, clicking...');
+    
+    // First hover over the button like a human would
+    await cookieButton.hover();
+    await page.waitForTimeout(Math.random() * 800 + 200);
+    
+    // Move mouse slightly within the button before clicking (more human-like)
+    const box = await cookieButton.boundingBox();
+    if (box) {
+      const x = box.x + box.width/2 + (Math.random() * 10 - 5);
+      const y = box.y + box.height/2 + (Math.random() * 6 - 3);
+      await page.mouse.move(x, y);
+      await page.waitForTimeout(Math.random() * 400 + 100);
+    }
+    
+    // Click with a more natural delay pattern
+    await cookieButton.click({delay: Math.random() * 80 + 30}).catch(async e => {
+      log.warning(`Direct cookie click failed: ${e.message}, trying JS click...`);
+      await page.evaluate(btn => btn.click(), cookieButton);
+    });
+    
+    // Longer random wait after clicking (humans don't act immediately)
+    await page.waitForTimeout(Math.random() * 3000 + 2000);
+  }
+} catch (cookieError) {
+  log.warning(`Error handling cookie consent: ${cookieError.message}`);
+}
 
     // Wait for the page to load and check for error message
     await page.waitForTimeout(3000);
