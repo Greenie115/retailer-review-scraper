@@ -27,8 +27,15 @@ async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
       log.warning(`Error handling cookie consent: ${cookieError.message}`);
     }
 
-    // Wait for the page to load
+    // Wait for the page to load and check for error message
     await page.waitForTimeout(3000);
+
+    // Check if the "Something went wrong" message is present
+    const errorMessage = await page.$('text="Something went wrong"');
+    if (errorMessage) {
+      log.warning('Sainsbury\'s page likely blocked, "Something went wrong" message detected.');
+      return []; // Return empty array if blocked
+    }
 
     // Scroll down to load lazy-loaded content
     await page.evaluate(async () => {
@@ -52,7 +59,9 @@ async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
     // Look for the reviews section
     const reviewsSection = await page.$('.product-reviews, #reviews, [data-testid="reviews-accordion"], .pd-reviews, div[id="reviews"], section[id="reviews"], div[class*="Reviews"]');
     if (!reviewsSection) {
-      log.warning('Could not find reviews section on Sainsbury\'s page');
+      log.warning('Could not find reviews section on Sainsbury\'s page. Page might be blocked or structure changed.');
+      // Return empty array immediately if reviews section is not found
+      return [];
     } else {
       log.info('Found reviews section on Sainsbury\'s page');
       

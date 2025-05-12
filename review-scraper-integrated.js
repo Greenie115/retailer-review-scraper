@@ -620,19 +620,58 @@ async function scrapeReviews(url, options = {}) {
         console.log(`DEBUGGING: Tesco special approach failed: ${tescoError.message}, trying direct navigation`);
         await navigateWithRetry(page, url);
       }
-    } else {
+    } else if (detectedRetailer === 'sainsburys') {
+      // For Sainsbury's, try a special approach similar to Tesco
+      try {
+        // First, visit the Sainsbury's homepage to get cookies
+        await page.goto('https://www.sainsburys.co.uk/', { 
+          waitUntil: 'domcontentloaded', 
+          timeout: 60000 
+        });
+        log.info('DEBUGGING: Visited Sainsbury\'s homepage to get cookies');
+        
+        // Accept cookies if the banner appears
+        try {
+          const acceptCookiesButton = await page.$('#onetrust-accept-btn-handler, button:has-text("Accept all cookies"), button[id*="accept-cookies"]');
+          if (acceptCookiesButton) {
+            log.info('DEBUGGING: Found cookie consent button on Sainsbury\'s homepage, clicking...');
+            await acceptCookiesButton.click();
+            log.info('DEBUGGING: Accepted cookies on Sainsbury\'s homepage');
+            await page.waitForTimeout(2000);
+          }
+        } catch (cookieError) {
+          log.warning(`DEBUGGING: Error handling cookie consent on Sainsbury's homepage: ${cookieError.message}`);
+        }
+        
+        // Now navigate to the actual product page
+        await page.goto(url, { 
+          waitUntil: 'domcontentloaded', 
+          timeout: 60000 
+        });
+        log.info('DEBUGGING: Navigated to Sainsbury\'s product page after homepage visit');
+        
+        // Wait for network to be idle
+        await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(e => {
+          log.info(`DEBUGGING: Network idle wait timed out: ${e.message}`);
+        });
+      } catch (sainsburysError) {
+        log.warning(`DEBUGGING: Sainsbury's special approach failed: ${sainsburysError.message}, trying direct navigation`);
+        await navigateWithRetry(page, url);
+      }
+    }
+    else {
       // For other retailers, use standard navigation with retry
       await navigateWithRetry(page, url);
     }
-    
-    // Helper function for navigation with retry
-    async function navigateWithRetry(page, url) {
-      try {
-        await page.goto(url, { 
-          waitUntil: 'domcontentloaded', 
-          timeout: 60000
-        });
-        console.log('DEBUGGING: Initial navigation successful with domcontentloaded');
+
+  // Helper function for navigation with retry
+  async function navigateWithRetry(page, url) {
+    try {
+      await page.goto(url, { 
+        waitUntil: 'domcontentloaded', 
+        timeout: 60000
+      });
+      log.info('DEBUGGING: Initial navigation successful with domcontentloaded');
         
         // Wait for network to be idle
         await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(e => {

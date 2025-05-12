@@ -243,7 +243,7 @@
         
         <div id="loading">
             <div class="spinner"></div>
-            Scraping in progress... Please wait. A browser window may appear for manual captcha solving.
+            <span id="progressText">Scraping in progress...</span> Please wait. A browser window may appear for manual captcha solving.
         </div>
         
         <div id="success">
@@ -264,6 +264,7 @@
     <script>
         const form = document.getElementById('scrapeForm');
         const loadingDiv = document.getElementById('loading');
+        const progressText = document.getElementById('progressText');
         const successDiv = document.getElementById('success');
         const errorDiv = document.getElementById('error');
         const submitButton = form.querySelector('button');
@@ -273,81 +274,99 @@
             event.preventDefault();
 
             loadingDiv.style.display = 'block'; // Show loading indicator
+            progressText.textContent = 'Scraping in progress...'; // Reset progress text
             successDiv.style.display = 'none'; // Hide success message
             errorDiv.style.display = 'none'; // Hide previous errors
             errorDiv.textContent = '';
             submitButton.disabled = true; // Disable button during scrape
 
             const formData = new FormData(form);
-            // Note: The field is called 'productUrls' (plural), not 'productUrl'
+            const queryParams = new URLSearchParams(formData).toString();
+            const eventSource = new EventSource(`/scrape-stream?${queryParams}`);
 
-            fetch('/scrape', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded', // Standard form submission type
-                },
-                body: new URLSearchParams(formData).toString() // Encode form data
-            })
-            .then(response => {
-                if (!response.ok) {
-                    // If response is not OK, try to read the error message text
-                    return response.text().then(text => {
-                        throw new Error(text || `HTTP error! status: ${response.status}`);
-                    });
-                }
-                // Check if the response is a file download
-                const disposition = response.headers.get('Content-Disposition');
-                if (disposition && disposition.indexOf('attachment') !== -1) {
-                    return response.blob().then(blob => {
-                        // Create a link to download the blob
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.style.display = 'none';
-                        a.href = url;
-                        // Extract filename from header or default
-                        const filenameMatch = disposition.match(/filename=([^;\s]+)/);
-                        // Clean up any quotes that might be in the filename
-                        let filename = filenameMatch ? filenameMatch[1].replace(/["']/g, '') : 'reviews.csv';
-                        // Make sure the extension is .csv
-                        if (!filename.toLowerCase().endsWith('.csv')) {
-                            filename = filename + '.csv';
+            eventSource.onopen = function(event) {
+                console.log('SSE connection opened');
+            };
+
+            eventSource.onmessage = function(event) {
+                // Generic message handler - useful for debugging
+                console.log('SSE message:', event.data);
+            };
+
+            eventSource.addEventListener('start', function(event) {
+                const data = JSON.parse(event.data);
+                console.log('Scraping started:', data);
+                progressText.textContent = `Starting scraping for ${data.totalUrls} URLs...`;
+            });
+
+            eventSource.addEventListener('progress', function(event) {
+                const data = JSON.parse(event.data);
+                console.log('Scraping progress:', data);
+                progressText.textContent = `Scraping URL ${data.current} of ${data.total}...`;
+            });
+
+            eventSource.addEventListener('url_error', function(event) {
+                const data = JSON.parse(event.data);
+                console.error('Error scraping URL:', data);
+                // Optionally display URL-specific errors, but don't stop the process
+                // For now, just log it.
+            });
+
+            eventSource.addEventListener('complete', function(event) {
+                const data = JSON.parse(event.data);
+                console.log('Scraping complete:', data);
+
+                // Trigger CSV download
+                const blob = new Blob([data.csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = data.filename || 'reviews.csv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+
+                progressText.textContent = `Scraping complete. Found ${data.totalReviews} reviews from ${data.totalProducts} products.`;
+                successDiv.style.display = 'block'; // Show success message
+                loadingDiv.style.display = 'none'; // Hide loading indicator
+                submitButton.disabled = false; // Re-enable button
+                eventSource.close(); // Close the SSE connection
+            });
+
+            eventSource.onerror = function(event) {
+                console.error('SSE Error:', event);
+                eventSource.close(); // Close the connection on error
+
+                let errorMessage = 'An unknown error occurred during scraping.';
+                // Try to get a more specific error message if available
+                if (event.data) {
+                    try {
+                        const errorData = JSON.parse(event.data);
+                        if (errorData.message) {
+                            errorMessage = `Error: ${errorData.message}`;
                         }
-                        a.download = filename;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        a.remove();
-                        return { success: true }; // Indicate success
-                    });
-                } else {
-                    // If not a file, maybe an unexpected response
-                    return response.text().then(text => {
-                         throw new Error(`Unexpected response from server: ${text}`);
-                    });
+                    } catch (e) {
+                        errorMessage = `Error: ${event.data}`;
+                    }
+                } else if (event.message) {
+                     errorMessage = `Error: ${event.message}`;
                 }
-            })
-            .then(result => {
-                 if (result && result.success) {
-                    console.log('File download initiated.');
-                    successDiv.style.display = 'block'; // Show success message
-                 }
-            })
-            .catch(error => {
-                console.error('Scraping failed:', error);
+
+
                 errorDiv.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
                         <circle cx="12" cy="12" r="10"></circle>
                         <line x1="12" y1="8" x2="12" y2="12"></line>
                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
                     </svg>
-                    Error: ${error.message}
+                    ${errorMessage}
                 `;
                 errorDiv.style.display = 'block'; // Show error message
-            })
-            .finally(() => {
                 loadingDiv.style.display = 'none'; // Hide loading indicator
                 submitButton.disabled = false; // Re-enable button
-            });
+            };
         });
     </script>
 </body>

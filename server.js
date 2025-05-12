@@ -72,11 +72,31 @@ app.get('/health', (req, res) => {
 });
 
 // Route to handle the scraping request
-app.post('/scrape', async (req, res) => {
-  console.log('Received scrape request with body:', req.body);
-  const productUrlsText = req.body.productUrls;
-  const dateFrom = req.body.dateFrom || null;
-  const dateTo = req.body.dateTo || null;
+// Route to handle the scraping request using Server-Sent Events (SSE)
+app.get('/scrape-stream', async (req, res) => {
+  console.log('Received scrape-stream request with query:', req.query);
+  const productUrlsText = req.query.productUrls;
+  const dateFrom = req.query.dateFrom || null;
+  const dateTo = req.query.dateTo || null;
+
+  // Set headers for Server-Sent Events
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders(); // Flush headers to open the connection immediately
+
+  const sendEvent = (event, data) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    // res.flush(); // Optional: flush after each event
+  };
+
+  // Handle client disconnection
+  req.on('close', () => {
+    console.log('Client disconnected');
+    // Clean up resources if necessary
+    res.end();
+  });
 
   // Split the URLs by newline and filter out empty lines
   const productUrls = productUrlsText.split('\n')
@@ -90,7 +110,8 @@ app.post('/scrape', async (req, res) => {
   }
 
   if (!productUrls.length) {
-    return res.status(400).send('At least one product URL is required.');
+    sendEvent('error', { message: 'At least one product URL is required.' });
+    return res.end();
   }
 
   try {
@@ -98,11 +119,13 @@ app.post('/scrape', async (req, res) => {
     let allReviews = [];
     let totalProductsScraped = 0;
     let successfulProducts = 0;
+    const totalUrls = productUrls.length;
 
     // Create a Set to track unique review identifiers for deduplication
     const uniqueReviewIds = new Set();
 
-    console.log(`Starting to process ${productUrls.length} URLs...`);
+    console.log(`Starting to process ${totalUrls} URLs...`);
+    sendEvent('start', { totalUrls: totalUrls });
 
     // Group URLs by retailer for better logging
     const retailerGroups = {};
@@ -121,8 +144,15 @@ app.post('/scrape', async (req, res) => {
 
     // Process each URL
     for (const productUrl of productUrls) {
+      totalProductsScraped++;
+      console.log(`Starting scraper for URL ${totalProductsScraped}/${totalUrls}: ${productUrl}`);
+      sendEvent('progress', {
+        current: totalProductsScraped,
+        total: totalUrls,
+        url: productUrl
+      });
+
       try {
-        console.log(`Starting scraper for URL ${totalProductsScraped + 1}/${productUrls.length}: ${productUrl}`);
         const options = {
           dateFrom: dateFrom,
           dateTo: dateTo
@@ -176,23 +206,22 @@ app.post('/scrape', async (req, res) => {
         allReviews = allReviews.concat(uniqueReviews);
         console.log(`After adding, allReviews now contains ${allReviews.length} reviews`);
 
-        totalProductsScraped++;
-
         // Only count products that actually returned reviews
         if (uniqueReviews.length > 0) {
           successfulProducts++;
         }
       } catch (productError) {
         console.error(`Error scraping ${productUrl}: ${productError.message}`);
+        sendEvent('url_error', { url: productUrl, message: productError.message });
         // Continue with next URL even if this one failed
       }
     }
 
-    console.log(`Scraper finished, found ${allReviews.length} reviews across ${totalProductsScraped} products (${successfulProducts} with reviews).`);
+    console.log(`Scraper finished, found ${allReviews.length} reviews across ${totalUrls} products (${successfulProducts} with reviews).`);
 
     if (!allReviews || allReviews.length === 0) {
-        // Handle case where no reviews were found
-        return res.status(404).send('No reviews found for any of the given URLs, or scraping was interrupted.');
+        sendEvent('error', { message: 'No reviews found for any of the given URLs, or scraping was interrupted.' });
+        return res.end();
     }
 
     // Generate a more descriptive filename based on the date
@@ -202,7 +231,7 @@ app.post('/scrape', async (req, res) => {
     let filename = `reviews_multiple_products_${date}.csv`;
 
     // Apply date filtering if specified
-    console.log(`Preparing to generate CSV with ${allReviews.length} reviews from ${totalProductsScraped} products`);
+    console.log(`Preparing to generate CSV with ${allReviews.length} reviews from ${totalUrls} products`);
     let filteredReviews = allReviews;
     let inRangeCount = 0;
 
@@ -231,7 +260,7 @@ app.post('/scrape', async (req, res) => {
 
     // Create CSV content
     // First, add metadata as comments at the top of the CSV
-    let csvContent = `# Products Scraped: ${totalProductsScraped}\r\n`;
+    let csvContent = `# Products Scraped: ${totalUrls}\r\n`;
     csvContent += `# Extraction Date: ${new Date().toLocaleDateString()}\r\n`;
     csvContent += `# Total Reviews: ${allReviews.length}\r\n`;
 
@@ -460,7 +489,7 @@ app.post('/scrape', async (req, res) => {
               // If month is greater than 12, it's likely in the wrong format (mm/dd/yyyy)
               else if (monthNum > 12) {
                 // Swap day and month
-                reviewDate = `${month}/${day}/${year}`;
+                reviewDate = `${parts[1]}/${parts[0]}/${parts[2]}`;
               }
               // If both are <= 12, use the original order but ensure it's dd/mm/yyyy
               else {
@@ -539,11 +568,6 @@ app.post('/scrape', async (req, res) => {
 
       csvContent += row.join(',') + '\r\n';
     }
-
-    // Set headers for CSV file download
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    // Format the Content-Disposition header according to RFC 6266
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
     // Debug: Print the first 5 reviews from each product
     const productIds = [...new Set(allReviews.map(review => review.productId))];
@@ -634,15 +658,22 @@ app.post('/scrape', async (req, res) => {
       }
     }
 
-    // Send the CSV content
-    res.send(csvContent);
-    console.log(`CSV file "${filename}" sent to client with ${filteredReviews.length} reviews from ${totalProductsScraped} products (${successfulProducts} with reviews).`);
+    // Send the CSV content as a final event
+    sendEvent('complete', {
+      filename: filename,
+      csvContent: csvContent,
+      totalReviews: allReviews.length,
+      totalProducts: totalUrls,
+      successfulProducts: successfulProducts
+    });
+
+    console.log(`CSV data for "${filename}" sent as 'complete' event.`);
     console.log(`Reviews by product: ${JSON.stringify(allReviews.reduce((acc, review) => {
       acc[review.productId] = (acc[review.productId] || 0) + 1;
       return acc;
     }, {}))}`);
     console.log(`Total reviews in CSV: ${filteredReviews.length}`);
-    console.log(`Total products in CSV: ${totalProductsScraped}`);
+    console.log(`Total products in CSV: ${totalUrls}`);
     console.log(`Successful products (with reviews): ${successfulProducts}`);
 
     // Delete all screenshot files after CSV has been sent
@@ -652,7 +683,9 @@ app.post('/scrape', async (req, res) => {
 
   } catch (error) {
     console.error('Error during scraping or file generation:', error);
-    res.status(500).send(`Scraping failed: ${error.message}`);
+    sendEvent('error', { message: `Scraping failed: ${error.message}` });
+  } finally {
+    res.end(); // End the SSE connection
   }
 });
 
