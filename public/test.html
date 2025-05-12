@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Scraper Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #results {
+            white-space: pre-wrap;
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .review {
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .review:last-child {
+            border-bottom: none;
+        }
+        .review-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .review-meta {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        .review-text {
+            margin-top: 5px;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .sample-urls {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        .sample-urls h3 {
+            margin-top: 0;
+        }
+        .sample-urls ul {
+            padding-left: 20px;
+        }
+        .sample-urls li {
+            margin-bottom: 5px;
+        }
+        .sample-urls button {
+            background-color: #2196F3;
+            padding: 5px 10px;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .sample-urls button:hover {
+            background-color: #0b7dda;
+        }
+    </style>
+</head>
+<body>
+    <h1>Review Scraper Test</h1>
+    
+    <div class="container">
+        <div class="card">
+            <h2>Test Scraper</h2>
+            <div class="form-group">
+                <label for="url">Product URL:</label>
+                <input type="text" id="url" placeholder="Enter product URL from Tesco, Sainsbury's, ASDA, or Morrisons">
+            </div>
+            <button id="scrapeBtn">Scrape Reviews</button>
+            
+            <div class="loading" id="loading">
+                <p>Scraping reviews... This may take a minute or two.</p>
+                <div class="spinner"></div>
+            </div>
+        </div>
+        
+        <div class="sample-urls">
+            <h3>Sample URLs to Test</h3>
+            <ul>
+                <li>
+                    Tesco: <span class="url-text">https://www.tesco.com/groceries/en-GB/products/254656543</span>
+                    <button class="use-url-btn">Use</button>
+                </li>
+                <li>
+                    Sainsbury's: <span class="url-text">https://www.sainsburys.co.uk/gol-ui/product/sainsburys-british-semi-skimmed-milk-227l</span>
+                    <button class="use-url-btn">Use</button>
+                </li>
+                <li>
+                    ASDA: <span class="url-text">https://groceries.asda.com/product/ham-pork-slices/asda-thick-sliced-honey-roast-ham/910000448632</span>
+                    <button class="use-url-btn">Use</button>
+                </li>
+                <li>
+                    Morrisons: <span class="url-text">https://groceries.morrisons.com/products/market-street-deli-thickly-sliced-wiltshire-cured-ham/111543577</span>
+                    <button class="use-url-btn">Use</button>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="card" id="resultsCard" style="display: none;">
+            <h2>Results</h2>
+            <div id="resultsInfo"></div>
+            <h3>Reviews</h3>
+            <div id="reviewsList"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const scrapeBtn = document.getElementById('scrapeBtn');
+            const urlInput = document.getElementById('url');
+            const loading = document.getElementById('loading');
+            const resultsCard = document.getElementById('resultsCard');
+            const resultsInfo = document.getElementById('resultsInfo');
+            const reviewsList = document.getElementById('reviewsList');
+            
+            // Add event listeners to "Use" buttons
+            document.querySelectorAll('.use-url-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const url = this.previousElementSibling.textContent;
+                    urlInput.value = url;
+                });
+            });
+            
+            scrapeBtn.addEventListener('click', async function() {
+                const url = urlInput.value.trim();
+                
+                if (!url) {
+                    alert('Please enter a product URL');
+                    return;
+                }
+                
+                // Show loading spinner
+                loading.style.display = 'block';
+                resultsCard.style.display = 'none';
+                scrapeBtn.disabled = true;
+                
+                try {
+                    const response = await fetch('/test-scrape', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ url })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    // Hide loading spinner
+                    loading.style.display = 'none';
+                    scrapeBtn.disabled = false;
+                    
+                    if (data.success) {
+                        // Show results
+                        resultsCard.style.display = 'block';
+                        
+                        // Display info
+                        resultsInfo.innerHTML = `
+                            <p><strong>Retailer:</strong> ${data.retailer}</p>
+                            <p><strong>URL:</strong> ${data.url}</p>
+                            <p><strong>Total Reviews:</strong> ${data.reviewCount}</p>
+                        `;
+                        
+                        // Display reviews
+                        reviewsList.innerHTML = '';
+                        if (data.reviews && data.reviews.length > 0) {
+                            data.reviews.forEach(review => {
+                                const reviewElement = document.createElement('div');
+                                reviewElement.className = 'review';
+                                
+                                reviewElement.innerHTML = `
+                                    <div class="review-title">${review.title || 'No Title'}</div>
+                                    <div class="review-meta">
+                                        Rating: ${review.rating || 'N/A'} | 
+                                        Date: ${review.date || 'Unknown date'}
+                                    </div>
+                                    <div class="review-text">${review.text || 'No review text'}</div>
+                                `;
+                                
+                                reviewsList.appendChild(reviewElement);
+                            });
+                        } else {
+                            reviewsList.innerHTML = '<p>No reviews found</p>';
+                        }
+                    } else {
+                        // Show error
+                        alert(`Error: ${data.error}`);
+                    }
+                } catch (error) {
+                    // Hide loading spinner
+                    loading.style.display = 'none';
+                    scrapeBtn.disabled = false;
+                    
+                    // Show error
+                    alert(`Error: ${error.message}`);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

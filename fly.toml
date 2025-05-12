@@ -2,7 +2,7 @@ app = "retailer-review-scraper"
 primary_region = "lhr" # London region, change if needed
 
 [build]
-  builder = "heroku/buildpacks:20"
+  dockerfile = "Dockerfile"
 
 [env]
   PORT = "8080"

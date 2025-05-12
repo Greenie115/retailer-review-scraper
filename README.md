@@ -67,6 +67,35 @@ http://localhost:3001
 4. Wait for the scraping to complete (a browser window may appear for captcha solving)
 5. The CSV file will automatically download when complete
 
+### Using the Local Browser Service
+
+For Morrisons and Sainsbury's websites, which have stronger anti-bot measures, you can use the local browser service to scrape reviews using a visible browser:
+
+1. Start the local browser service before running the main application:
+   ```
+   # On Windows
+   start-local-browser-service.bat
+   
+   # On macOS/Linux
+   ./start-local-browser-service.sh
+   ```
+
+2. The service will run on port 3002 and will automatically be used when scraping Morrisons and Sainsbury's URLs
+3. When a Morrisons or Sainsbury's URL is being scraped, a visible Chrome window will open
+4. The window will automatically close after the reviews have been extracted
+5. Keep the service running in the background while using the main application
+
+### Using with Deployed Application
+
+When using the application deployed on Fly.io, it automatically uses Xvfb (X Virtual Framebuffer) to run browsers in "visible" mode for Morrisons and Sainsbury's websites. This approach helps bypass anti-bot measures without requiring any additional setup from users.
+
+The application will:
+1. Start Xvfb to create a virtual display
+2. Run Chrome in non-headless mode on this virtual display for Morrisons and Sainsbury's websites
+3. Use headless mode for other retailers (Tesco, ASDA)
+
+This means you can use the deployed application to scrape all supported retailers without any additional setup on your computer.
+
 ## Supported Retailers
 
 - **Tesco**: Product URLs from tesco.com

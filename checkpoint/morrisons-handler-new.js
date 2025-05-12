@@ -11,9 +11,24 @@ async function handleMorrisonsSite(page, siteConfig, maxReviews = 50) {
   // Clear any existing reviews to avoid duplicates
   global.morrisonsReviews = [];
   
+  // Set a flag to track if we've successfully extracted reviews
+  let extractedReviews = false;
+  
   try {
+    // Check if the page has content
+    const hasContent = await page.evaluate(() => {
+      return document.body && document.body.innerHTML.length > 0;
+    }).catch(() => false);
+    
+    if (!hasContent) {
+      log.error('Morrisons page has no content, likely a navigation timeout or blocking issue');
+      throw new Error('Page has no content - navigation may have failed');
+    }
+    
     // Take a screenshot for debugging
-    await page.screenshot({ path: `morrisons-initial-${Date.now()}.png` });
+    await page.screenshot({ path: `morrisons-initial-${Date.now()}.png` }).catch(e => {
+      log.warning(`Failed to take screenshot: ${e.message}`);
+    });
     
     // First, handle cookie consent if present
     try {
@@ -459,10 +474,13 @@ async function extractMorrisonsReviews(page) {
             console.log(`Extracted text: "${text.substring(0, 30)}..."`);
           }
           
-          // Only add if we have meaningful text or a rating
-          if (text || title) {
+          // Only add if we have meaningful text or a title AND rating is valid (1-5)
+          const numericRating = parseInt(rating, 10);
+          if ((text || title) && numericRating >= 1 && numericRating <= 5) {
             results.push({ rating, title, date, text });
             console.log(`Added Morrisons review with rating ${rating}, title: "${title}", date: "${date}"`);
+          } else if (numericRating > 5 || numericRating < 1) {
+            console.log(`Skipping review with invalid rating ${rating} (must be 1-5), title: "${title}"`);
           }
         } catch (e) {
           console.error('Error processing Morrisons review item:', e);
@@ -542,11 +560,14 @@ async function extractMorrisonsReviews(page) {
               console.log(`Extracted text: "${text.substring(0, 30)}..."`);
             }
             
-            // Only add if we have meaningful text or a title
-            if (text || title) {
-              results.push({ rating, title, date, text });
-              console.log(`Added Morrisons review with rating ${rating}, title: "${title}", date: "${date}"`);
-            }
+          // Only add if we have meaningful text or a title AND rating is valid (1-5)
+          const numericRating = parseInt(rating, 10);
+          if ((text || title) && numericRating >= 1 && numericRating <= 5) {
+            results.push({ rating, title, date, text });
+            console.log(`Added Morrisons review with rating ${rating}, title: "${title}", date: "${date}"`);
+          } else if (numericRating > 5 || numericRating < 1) {
+            console.log(`Skipping review with invalid rating ${rating} (must be 1-5), title: "${title}"`);
+          }
           } catch (e) {
             console.error('Error processing alternative Morrisons review item:', e);
           }
@@ -620,10 +641,13 @@ async function extractMorrisonsReviews(page) {
               }
             }
             
-            // Only add if we have meaningful text or a title
-            if (text || title) {
+            // Only add if we have meaningful text or a title AND rating is valid (1-5)
+            const numericRating = parseInt(rating, 10);
+            if ((text || title) && numericRating >= 1 && numericRating <= 5) {
               results.push({ rating, title, date, text });
               console.log(`Added Morrisons review from aggressive approach: rating ${rating}, title: "${title}"`);
+            } else if (numericRating > 5 || numericRating < 1) {
+              console.log(`Skipping review with invalid rating ${rating} (must be 1-5), title: "${title}"`);
             }
           } catch (e) {
             console.error('Error in aggressive review extraction:', e);

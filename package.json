@@ -9,7 +9,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "deploy": "flyctl deploy",
     "build": "echo \"No build step required\"",
-    "lint": "echo \"No linting configured\""
+    "lint": "echo \"No linting configured\"",
+    "local-browser": "node local-browser-service.js",
+    "test-server": "node test-integrated-server.js",
+    "test-local-browser": "node test-local-browser-service.js"
   },
   "keywords": [
     "scraper",
@@ -26,12 +29,13 @@
     "cheerio": "^1.0.0-rc.12",
     "chrono-node": "^2.8.0",
     "commander": "^11.1.0",
+    "cors": "^2.8.5",
     "crawlee": "^3.8.1",
     "csv-writer": "^1.6.0",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "ora": "^5.4.1",
-    "playwright": "^1.41.2",
+    "playwright": "^1.52.0",
     "puppeteer": "^21.11.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

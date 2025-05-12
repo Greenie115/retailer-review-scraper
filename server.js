@@ -1,12 +1,59 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { scrapeReviews } = require('./review-scraper-crawlee-fixed'); // Import the fixed scraper function
+const axios = require('axios');
+const { scrapeReviews } = require('./review-scraper-integrated'); // Import the integrated scraper function
 const { generateCsvContent, addSiteTypeToReviews, addProductInfoToReviews } = require('./csv-exporter'); // Import CSV export utilities
 const urlUtils = require('./url-utils'); // Import URL utilities
 
+// Function to try scraping with local browser service first
+async function tryLocalBrowserService(url, options = {}) {
+  const retailer = urlUtils.detectRetailerFromUrl(url);
+  
+  // Only use local browser service for Morrisons and Sainsburys
+  if (retailer !== 'morrisons' && retailer !== 'sainsburys') {
+    return null;
+  }
+  
+  console.log(`Attempting to use local browser service for ${retailer} URL: ${url}`);
+  
+  try {
+    // Try to connect to the local browser service
+    const response = await axios.post('http://localhost:3002/scrape-with-visible-browser', {
+      url,
+      retailer,
+      options
+    }, {
+      timeout: 30000 // 30 second timeout
+    });
+    
+    if (response.status === 200 && response.data && response.data.reviews) {
+      console.log(`Successfully retrieved ${response.data.reviews.length} reviews from local browser service`);
+      
+      // Add metadata to reviews
+      const reviews = response.data.reviews.map(review => ({
+        ...review,
+        sourceUrl: url,
+        siteType: retailer,
+        extractedAt: new Date().toISOString(),
+        // Generate a unique ID for deduplication
+        uniqueId: `${retailer}-${review.title ? review.title.substring(0, 20) : ''}-${review.text ? review.text.substring(0, 30) : ''}`.replace(/\s+/g, '-').toLowerCase()
+      }));
+      
+      return reviews;
+    }
+    
+    console.log('Local browser service returned invalid response');
+    return null;
+  } catch (error) {
+    console.error(`Error using local browser service: ${error.message}`);
+    console.log('Falling back to regular scraper');
+    return null;
+  }
+}
+
 const app = express();
-const port = process.env.PORT || 3001; // Use environment port or default to 3001
+const port = process.env.PORT || 8080; // Use environment port or default to 8080
 
 // Middleware to parse URL-encoded bodies (as sent by HTML forms)
 app.use(express.urlencoded({ extended: true }));
@@ -26,6 +73,7 @@ app.get('/health', (req, res) => {
 
 // Route to handle the scraping request
 app.post('/scrape', async (req, res) => {
+  console.log('Received scrape request with body:', req.body);
   const productUrlsText = req.body.productUrls;
   const dateFrom = req.body.dateFrom || null;
   const dateTo = req.body.dateTo || null;
@@ -36,6 +84,7 @@ app.post('/scrape', async (req, res) => {
     .filter(url => url.length > 0);
 
   console.log(`Received scrape request for ${productUrls.length} URLs`);
+  console.log('URLs to scrape:', productUrls);
   if (dateFrom || dateTo) {
     console.log(`Date range filter: ${dateFrom || 'any'} to ${dateTo || 'any'}`);
   }
