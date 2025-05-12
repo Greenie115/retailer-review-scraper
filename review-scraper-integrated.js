@@ -376,6 +376,12 @@ async function scrapeReviews(url, options = {}) {
       ]
     };
     
+    // Add proxy server if specified in environment variables
+    if (process.env.PROXY_SERVER) {
+      log.info(`Using proxy server: ${process.env.PROXY_SERVER}`);
+      launchOptions.args.push(`--proxy-server=${process.env.PROXY_SERVER}`);
+    }
+
     // Add specific user agent for different retailers
     if (detectedRetailer === 'tesco') {
       // Use a very recent Chrome version for Tesco

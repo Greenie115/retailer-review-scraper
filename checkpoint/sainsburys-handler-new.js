@@ -486,7 +486,7 @@ async function extractSainsburysReviews(page) {
             // Only add if we have meaningful text or a rating
             if (text || title) {
               results.push({ rating, title, date, text });
-              console.log(`Added Sainsbury's review from ID div with rating ${rating}, title: "${title}", date: "${date}"`);
+              console.log(`Added Sainsbury's review from ID div with rating ${rating}`);
             }
           } catch (e) {
             console.error('Error processing Sainsbury\'s ID div:', e);
@@ -601,7 +601,7 @@ async function extractSainsburysReviews(page) {
 
         // Find all review containers using the current strategy
         const reviewContainers = document.querySelectorAll(strategy.container);
-        console.log(`Found ${reviewContainers.length} Sainsbury's review containers with selector: ${strategy.container}`);
+        console.log(`Found ${reviewContainers.length} Sainsbury's review containers with exact selector`);
 
         // If we found containers, process them
         if (reviewContainers.length > 0) {
