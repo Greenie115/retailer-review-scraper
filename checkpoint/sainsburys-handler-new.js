@@ -104,8 +104,10 @@ async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
       log.info('Trying JavaScript approach to click reviews accordion/tab...');
       const clicked = await page.evaluate(() => {
         // Try to find any element that might be the reviews accordion/tab
-        const possibleAccordions = Array.from(document.querySelectorAll('button[aria-controls*="reviews"], a[href*="#reviews"], [data-testid*="reviews"], button:contains("Review"), a:contains("Review"), div[role="tab"]:contains("Review")'));
+        // Removed :contains() as it's not standard CSS
+        const possibleAccordions = Array.from(document.querySelectorAll('button[aria-controls*="reviews"], a[href*="#reviews"], [data-testid*="reviews"], div[role="tab"], button, a'));
         for (const acc of possibleAccordions) {
+          // Check text content manually
           if (acc.textContent.includes('Review') || acc.textContent.includes('review')) {
             console.log('Found reviews accordion/tab via JavaScript, clicking...');
             acc.click();
@@ -135,7 +137,7 @@ async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
     let reviewsSection = null;
     try {
       log.info(`Waiting for reviews section with selector: ${reviewsSectionSelector}`);
-      // Wait for the main reviews section element to be visible
+      // Explicitly wait for the main reviews section element to be visible
       reviewsSection = await page.waitForSelector(reviewsSectionSelector, { state: 'visible', timeout: 15000 }); // Wait up to 15 seconds for visibility
       log.info('Found reviews section on Sainsbury\'s page after waiting');
 
@@ -235,7 +237,8 @@ async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
             const possibleNextButtons = [];
 
             // Look for elements with specific attributes or text
-            document.querySelectorAll('a[href*="page="], a[href*="%2Fpage%3D"], button:contains("Next"), a:contains("Next"), [aria-label*="Next page"]').forEach(el => possibleNextButtons.push(el));
+            // Removed :contains() as it's not standard CSS
+            document.querySelectorAll('a[href*="page="], a[href*="%2Fpage%3D"], [aria-label*="Next page"]').forEach(el => possibleNextButtons.push(el));
 
             // Look for elements with right arrow icons
             document.querySelectorAll('a svg, button svg').forEach(svg => {
@@ -254,6 +257,7 @@ async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
 
             // Find the most likely next button
             for (const button of possibleNextButtons) {
+              // Check if it has text or attributes suggesting it's a next button
               const text = button.textContent.toLowerCase();
               const hasNextText = text.includes('next') || text.includes('>');
               const hasRightArrow = button.querySelector('svg') !== null;
@@ -473,7 +477,7 @@ async function extractSainsburysReviews(page) {
 
             // Extract date
             let date = '';
-            const dateElement = reviewDiv.querySelector('div.review__date, .review__date');
+            const dateElement = reviewDiv.querySelector('div.review__date');
             if (dateElement) {
               date = dateElement.textContent.trim();
               console.log(`Extracted date from ID div: "${date}"`);
