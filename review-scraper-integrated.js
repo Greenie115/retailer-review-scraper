@@ -431,14 +431,14 @@ async function scrapeReviews(url, options = {}) {
     await context.addInitScript(() => {
       // Overwrite the navigator properties to avoid detection
       Object.defineProperty(navigator, 'webdriver', { get: () => false });
-      
+
       // Add fake plugins
       const mockPlugins = [
         { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
         { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: 'Portable Document Format' },
         { name: 'Native Client', filename: 'internal-nacl-plugin', description: 'Native Client Executable' }
       ];
-      
+
       // Create a more realistic plugins array
       Object.defineProperty(navigator, 'plugins', {
         get: () => {
@@ -448,19 +448,19 @@ async function scrapeReviews(url, options = {}) {
             namedItem: (name) => mockPlugins.find(plugin => plugin.name === name),
             refresh: () => {}
           };
-          
+
           // Add array-like access to plugins
           for (let i = 0; i < mockPlugins.length; i++) {
             plugins[i] = mockPlugins[i];
           }
-          
+
           return plugins;
         }
       });
-      
+
       // Set realistic languages
       Object.defineProperty(navigator, 'languages', { get: () => ['en-GB', 'en-US', 'en'] });
-      
+
       // Create a more realistic chrome object
       window.chrome = {
         runtime: {
@@ -487,7 +487,7 @@ async function scrapeReviews(url, options = {}) {
         app: { isInstalled: false },
         webstore: { onInstallStageChanged: {}, onDownloadProgress: {} }
       };
-      
+
       // Override permissions API
       if (navigator.permissions) {
         const originalQuery = navigator.permissions.query;
@@ -498,7 +498,7 @@ async function scrapeReviews(url, options = {}) {
           return originalQuery(parameters);
         };
       }
-      
+
       // Add fake media devices
       if (navigator.mediaDevices) {
         navigator.mediaDevices.enumerateDevices = () => Promise.resolve([
@@ -507,7 +507,7 @@ async function scrapeReviews(url, options = {}) {
           { deviceId: 'default', kind: 'videoinput', label: 'Default - Internal Webcam', groupId: 'default' }
         ]);
       }
-      
+
       // Override WebGL vendor and renderer
       const getParameter = WebGLRenderingContext.prototype.getParameter;
       WebGLRenderingContext.prototype.getParameter = function(parameter) {
@@ -521,11 +521,11 @@ async function scrapeReviews(url, options = {}) {
         }
         return getParameter.call(this, parameter);
       };
-      
+
       // Add window.outerWidth and window.outerHeight to make the window dimensions look realistic
       Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
       Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight + 100 });
-      
+
       // Add fake screen properties
       Object.defineProperty(screen, 'availWidth', { get: () => 1920 });
       Object.defineProperty(screen, 'availHeight', { get: () => 1080 });
@@ -533,8 +533,64 @@ async function scrapeReviews(url, options = {}) {
       Object.defineProperty(screen, 'height', { get: () => 1080 });
       Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
       Object.defineProperty(screen, 'pixelDepth', { get: () => 24 });
+
+      // Add additional spoofing for other properties
+      Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 }); // Spoof device memory
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 }); // Spoof hardware concurrency
+      Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 }); // Spoof touch points
+      Object.defineProperty(navigator, 'doNotTrack', { get: () => '0' }); // Spoof Do Not Track
+      Object.defineProperty(navigator, 'connection', { // Spoof network connection
+        get: () => ({
+          rtt: 50,
+          type: 'wifi',
+          effectiveType: '4g',
+          downlink: 10,
+          saveData: false
+        })
+      });
+
+      // Spoof canvas fingerprinting
+      const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+      HTMLCanvasElement.prototype.toDataURL = function(type, encoderOptions) {
+        if (type === 'image/png') {
+          // Return a consistent, non-unique image data URL
+          return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+        }
+        return originalToDataURL.call(this, type, encoderOptions);
+      };
+
+      // Spoof WebGL fingerprinting
+      const originalGetSupportedExtensions = WebGLRenderingContext.prototype.getSupportedExtensions;
+      WebGLRenderingContext.prototype.getSupportedExtensions = function() {
+        return [
+          'ANGLE_instanced_arrays', 'EXT_blend_minmax', 'EXT_color_buffer_half_float',
+          'EXT_disjoint_timer_query', 'EXT_float_blend', 'EXT_frag_depth',
+          'EXT_shader_texture_lod', 'EXT_sRGB', 'EXT_texture_filter_anisotropic',
+          'OES_element_index_uint', 'OES_standard_derivatives', 'OES_texture_float',
+          'OES_texture_float_linear', 'OES_texture_half_float', 'OES_texture_half_float_linear',
+          'OES_vertex_array_object', 'WEBGL_color_buffer_float', 'WEBGL_compressed_texture_astc',
+          'WEBGL_compressed_texture_etc', 'WEBGL_compressed_texture_etc1', 'WEBGL_compressed_texture_s3tc',
+          'WEBGL_compressed_texture_s3tc_srgb', 'WEBGL_debug_renderer_info', 'WEBGL_debug_shaders',
+          'WEBGL_depth_texture', 'WEBGL_draw_buffers', 'WEBGL_lose_context'
+        ];
+      };
+
+      const originalGetParameterWebGL = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        // GL_VENDOR
+        if (parameter === 7936) return 'Intel Inc.';
+        // GL_RENDERER
+        if (parameter === 7937) return 'Intel Iris OpenGL Engine';
+        // GL_VERSION
+        if (parameter === 7938) return 'WebGL 1.0 (OpenGL ES 2.0)';
+        // GL_SHADING_LANGUAGE_VERSION
+        if (parameter === 35724) return 'WebGL GLSL ES 1.00';
+        // Other parameters can be spoofed here if needed
+        return originalGetParameterWebGL.call(this, parameter);
+      };
+
     });
-    
+
     console.log('DEBUGGING: Browser context created');
     
     const page = await context.newPage();
