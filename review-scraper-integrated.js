@@ -375,6 +375,11 @@ async function scrapeReviews(url, options = {}) {
         '--mute-audio'
       ]
     };
+
+      if (detectedRetailer === 'sainsburys' && process.env.SAINSBURYS_PROXY_URL) {
+    log.info(`Using proxy for Sainsbury's: ${process.env.SAINSBURYS_PROXY_URL.replace(/:[^:]*@/, ':****@')}`);
+    launchOptions.args.push(`--proxy-server=${process.env.SAINSBURYS_PROXY_URL}`);
+  }
     
     // Add proxy server if specified in environment variables
     if (process.env.PROXY_SERVER) {
@@ -398,31 +403,31 @@ async function scrapeReviews(url, options = {}) {
     // Enhanced browser context with additional configurations
     // Use different context options based on the retailer
     const contextOptions = {
-      viewport: { 
-        width: 1200 + Math.floor(Math.random() * 100), 
-        height: 800 + Math.floor(Math.random() * 100) 
-      },
-      ignoreHTTPSErrors: true,
-      deviceScaleFactor: 1,
-      hasTouch: false,
-      javaScriptEnabled: true,
-      locale: 'en-GB',
-      timezoneId: 'Europe/London',
-      permissions: ['geolocation'],
-      // Add extra HTTP headers to appear more like a real browser
-      extraHTTPHeaders: {
-        'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
-        'sec-ch-ua-mobile': '?0',
-        'sec-ch-ua-platform': '"Windows"',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1'
-      }
-    };
+  viewport: { 
+    // Randomize viewport size to appear more realistic
+    width: 1280 + Math.floor(Math.random() * 200), 
+    height: 800 + Math.floor(Math.random() * 100) 
+  },
+  ignoreHTTPSErrors: true,
+  // other options...
+};
+
+// Add randomized user agent for Sainsbury's
+if (detectedRetailer === 'sainsburys') {
+  // List of realistic user agents for rotation
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15'
+  ];
+  
+  // Select a random user agent
+  const randomUserAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+  contextOptions.userAgent = randomUserAgent;
+  console.log(`Using randomized user agent for Sainsbury's: ${randomUserAgent}`);
+}
     
     // Add specific user agent for different retailers
     if (detectedRetailer === 'tesco') {
@@ -683,44 +688,109 @@ async function scrapeReviews(url, options = {}) {
         await navigateWithRetry(page, url);
       }
     } else if (detectedRetailer === 'sainsburys') {
-      // For Sainsbury's, try a special approach similar to Tesco
-      try {
-        // First, visit the Sainsbury's homepage to get cookies
-        await page.goto('https://www.sainsburys.co.uk/', { 
-          waitUntil: 'domcontentloaded', 
-          timeout: 60000 
-        });
-        log.info('DEBUGGING: Visited Sainsbury\'s homepage to get cookies');
-        
-        // Accept cookies if the banner appears
-        try {
-          const acceptCookiesButton = await page.$('#onetrust-accept-btn-handler, button:has-text("Accept all cookies"), button[id*="accept-cookies"]');
-          if (acceptCookiesButton) {
-            log.info('DEBUGGING: Found cookie consent button on Sainsbury\'s homepage, clicking...');
-            await acceptCookiesButton.click();
-            log.info('DEBUGGING: Accepted cookies on Sainsbury\'s homepage');
-            await page.waitForTimeout(2000);
-          }
-        } catch (cookieError) {
-          log.warning(`DEBUGGING: Error handling cookie consent on Sainsbury's homepage: ${cookieError.message}`);
+   try {
+    log.info('DEBUGGING: Using simplified stealth approach for Sainsbury\'s');
+    
+    // Set specific headers that make us look more like a real browser
+    await page.setExtraHTTPHeaders({
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-GB,en-US;q=0.9,en;q=0.8',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'Cache-Control': 'max-age=0',
+      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Referer': 'https://www.google.com/',
+      'Upgrade-Insecure-Requests': '1'
+    });
+    
+    // First visit a reference site, then Sainsbury's
+    await page.goto('https://www.bbc.co.uk/food', { 
+      waitUntil: 'domcontentloaded',
+      timeout: 60000
+    });
+    
+    log.info('DEBUGGING: Visited reference site');
+    await page.waitForTimeout(3000);
+    
+    // Execute stealth script to mask automation
+    await page.addInitScript(() => {
+      // Overwrite automation flags
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      
+      // Spoof plugins to appear more browser-like
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+          return [{name: "Chrome PDF Plugin"}, {name: "Chrome PDF Viewer"}, {name: "Native Client"}];
         }
-        
-        // Now navigate to the actual product page
-        await page.goto(url, { 
-          waitUntil: 'domcontentloaded', 
-          timeout: 60000 
+      });
+      
+      // Spoof languages for UK appearance
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-GB', 'en-US', 'en']
+      });
+      
+      // Add chrome object
+      window.chrome = {
+        runtime: {},
+        loadTimes: function() {},
+        csi: function() {},
+        app: {}
+      };
+    });
+    
+    // Directly navigate to Sainsbury's product page with a realistic referrer
+    await page.goto(url, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 90000 // Use a longer timeout
+    });
+    
+    log.info('DEBUGGING: Navigated to Sainsbury\'s product page');
+    
+    // Handle cookie consent (more robust approach)
+    try {
+      // Add short delay before looking for consent button
+      await page.waitForTimeout(2000);
+      
+      // Use a more comprehensive selector for the cookie button
+      const acceptSelector = 'button[id*="accept-cookies"], #onetrust-accept-btn-handler, [aria-label*="Accept"], [data-test-id*="accept-cookies"]';
+      const consentButton = await page.$(acceptSelector);
+      
+      if (consentButton) {
+        log.info('DEBUGGING: Found cookie consent button, clicking...');
+        await consentButton.click().catch(e => {
+          log.warning(`DEBUGGING: Direct click failed: ${e.message}, trying evaluate`);
+          // Fallback if direct click fails
+          return page.evaluate(selector => {
+            const buttons = document.querySelectorAll(selector);
+            if (buttons.length > 0) buttons[0].click();
+          }, acceptSelector);
         });
-        log.info('DEBUGGING: Navigated to Sainsbury\'s product page after homepage visit');
         
-        // Wait for network to be idle
-        await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(e => {
-          log.info(`DEBUGGING: Network idle wait timed out: ${e.message}`);
-        });
-      } catch (sainsburysError) {
-        log.warning(`DEBUGGING: Sainsbury's special approach failed: ${sainsburysError.message}, trying direct navigation`);
-        await navigateWithRetry(page, url);
+        await page.waitForTimeout(3000);
+        log.info('DEBUGGING: Handled cookie consent');
       }
+    } catch (cookieError) {
+      log.warning(`DEBUGGING: Error handling cookie consent: ${cookieError.message}`);
     }
+    
+    // Wait longer for the page to stabilize
+    await page.waitForTimeout(5000);
+    
+    // Continue with the rest of the processing...
+  } catch (sainsburysError) {
+    log.warning(`DEBUGGING: Sainsbury's approach failed: ${sainsburysError.message}, trying direct navigation`);
+    try {
+      await page.goto(url, { timeout: 120000, waitUntil: 'networkidle0' });
+    } catch (e) {
+      log.error(`DEBUGGING: Final navigation attempt failed: ${e.message}`);
+    }
+  }
+}
     else {
       // For other retailers, use standard navigation with retry
       await navigateWithRetry(page, url);

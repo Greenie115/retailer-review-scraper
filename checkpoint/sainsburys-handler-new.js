@@ -1,465 +1,521 @@
-// Sainsbury's specific handler - Anti-Automation Resistant Version
+// Simplified Sainsbury's specific handler without fallback reviews
 async function handleSainsburysSite(page, siteConfig, maxReviews = 50) {
   const log = siteConfig.log || console;
-  log.info('Using Sainsbury\'s specific handler with direct API access');
+  log.info('Using improved Sainsbury\'s specific handler');
 
-  // Initialize global array for Sainsbury's reviews if not exists
+  try {
+    // Extract product ID from URL for better logging
+    const url = page.url();
+    const productId = url.split('/').pop();
+    log.info(`Extracting product ID from URL: ${url}`);
+    log.info(`Extracted product ID from URL: ${productId}`);
+  } catch (e) {
+    log.warning(`Error extracting product ID: ${e.message}`);
+  }
+  
+  // Clear any existing reviews to avoid duplicates
   if (!global.sainsburysReviews) {
     global.sainsburysReviews = [];
   }
-
-  // Clear any existing reviews to avoid duplicates
   global.sainsburysReviews = [];
-  
+
   try {
-    // Instead of navigating through the site, let's extract the product ID from the URL
-    const url = page.url();
-    log.info(`Extracting product ID from URL: ${url}`);
-    
-    // Extract product ID from the URL directly
-    let productId = null;
-    const urlPathMatch = url.match(/\/([^\/]+)(?:\.html)?$/);
-    if (urlPathMatch && urlPathMatch[1]) {
-      productId = urlPathMatch[1];
-      log.info(`Extracted product ID from URL: ${productId}`);
-    }
-    
-    // If we can't get the ID from the URL, try one quick page load to extract it
-    if (!productId) {
-      log.info('Could not extract product ID from URL, trying with minimal page load');
-      
-      // Use a completely clean browser context with a different user agent
-      const context = await page.context().browser().newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        viewport: { width: 1280, height: 800 },
-        javaScriptEnabled: true
-      });
-      
-      // Create a new page with minimal fingerprint
-      const minimalPage = await context.newPage();
-      
-      // Set minimal headers
-      await minimalPage.setExtraHTTPHeaders({
-        'Accept-Language': 'en-GB,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-      });
-      
-      // Try a very quick load just to get the page source
+    // Take a screenshot for debugging
+    await page.screenshot({ path: `sainsburys-initial-${Date.now()}.png` }).catch(e => {
+      log.warning(`Failed to take screenshot: ${e.message}`);
+    });
+
+    // Try to find and click on the reviews section
+    try {
+      // First, handle cookie consent if present
       try {
-        const response = await minimalPage.goto(url, { 
-          timeout: 15000,
-          waitUntil: 'domcontentloaded'
+        const cookieButton = await page.$('#onetrust-accept-btn-handler, button:has-text("Accept all cookies"), button[id*="accept-cookies"]');
+        if (cookieButton) {
+          log.info('Found cookie consent button, clicking...');
+          await cookieButton.click().catch(e => log.warning(`Cookie click failed: ${e.message}`));
+          await page.waitForTimeout(2000);
+        }
+      } catch (cookieError) {
+        log.warning(`Error handling cookie consent: ${cookieError.message}`);
+      }
+
+      // Add some human-like behavior
+      await page.evaluate(() => {
+        // Random scrolling
+        const scrollTarget = window.innerHeight * (0.3 + Math.random() * 0.4);
+        window.scrollTo(0, scrollTarget);
+      });
+      
+      await page.waitForTimeout(2000);
+
+      // Try to find the reviews section by clicking on reviews tab/button
+      const reviewTabSelectors = [
+        'button:has-text("Reviews")',
+        'a:has-text("Reviews")',
+        'button:has-text("Ratings & Reviews")',
+        'a:has-text("Ratings & Reviews")',
+        'button[data-test="reviews-tab"]',
+        '[data-test="reviews-tab"]',
+        'button[aria-controls="reviews"]',
+        'a[href="#reviews"]',
+        'li[data-tab="reviews"]',
+        'div[role="tab"]:has-text("Reviews")',
+        '[data-toggle="tab"]:has-text("Reviews")',
+        '.gol-tabs__item:has-text("Reviews")',
+        '.gol-tabs__item',
+        '#reviews-tab',
+        'a[href="#product-reviews"]'
+      ];
+
+      let tabClicked = false;
+      for (const selector of reviewTabSelectors) {
+        try {
+          const element = await page.$(selector);
+          if (element) {
+            log.info(`Found reviews tab with selector: ${selector}`);
+            
+            // Check if element is visible
+            const isVisible = await element.isVisible().catch(() => false);
+            if (!isVisible) {
+              log.info(`Element found but not visible, skipping: ${selector}`);
+              continue;
+            }
+            
+            // Scroll into view with a smooth behavior
+            await element.scrollIntoViewIfNeeded();
+            await page.waitForTimeout(1000);
+            
+            // Try multiple ways to click
+            try {
+              await element.click().catch(async () => {
+                log.info(`Direct click failed, trying JavaScript click`);
+                await page.evaluate(el => el.click(), element);
+              });
+              
+              log.info(`Successfully clicked on reviews tab with selector: ${selector}`);
+              await page.waitForTimeout(2000);
+              tabClicked = true;
+              break;
+            } catch (clickError) {
+              log.warning(`Error clicking on element: ${clickError.message}`);
+            }
+          }
+        } catch (selectorError) {
+          log.warning(`Error with selector ${selector}: ${selectorError.message}`);
+        }
+      }
+
+      if (!tabClicked) {
+        // Try JavaScript approach
+        log.info(`Trying JavaScript approach to find and click reviews tab`);
+        const clicked = await page.evaluate(() => {
+          const possibleSelectors = [
+            'button, a, [role="tab"]',
+            '.gol-tabs__item',
+            '[data-target="#reviews"]',
+            '[href="#reviews"]',
+            '[data-toggle="tab"]'
+          ];
+          
+          for (const selector of possibleSelectors) {
+            const elements = document.querySelectorAll(selector);
+            
+            for (const el of elements) {
+              const text = el.textContent.toLowerCase();
+              if (text.includes('review') || text.includes('ratings')) {
+                console.log(`Found possible reviews tab via JavaScript`);
+                el.click();
+                return true;
+              }
+            }
+          }
+          
+          return false;
         });
         
-        if (response && response.status() === 200) {
-          // Try to extract product ID from the HTML
-          productId = await minimalPage.evaluate(() => {
-            // Look for product ID in various locations
-            const metaProduct = document.querySelector('meta[property="product:id"], meta[name="product:id"], meta[name="product-id"]');
-            if (metaProduct) return metaProduct.getAttribute('content');
-            
-            // Try to find it in JSON-LD data
-            const jsonLd = document.querySelector('script[type="application/ld+json"]');
-            if (jsonLd) {
-              try {
-                const data = JSON.parse(jsonLd.textContent);
-                if (data && data.productID) return data.productID;
-                if (data && data.sku) return data.sku;
-              } catch(e) {}
-            }
-            
-            // Try data attributes
-            const productElement = document.querySelector('[data-product-id], [data-pid], [data-product-sku]');
-            if (productElement) {
-              return productElement.getAttribute('data-product-id') || 
-                     productElement.getAttribute('data-pid') || 
-                     productElement.getAttribute('data-product-sku');
-            }
-            
-            // Look for it in the URL path
-            const pathSegments = window.location.pathname.split('/');
-            const lastSegment = pathSegments[pathSegments.length - 1].replace('.html', '');
-            if (lastSegment && /^[a-z0-9\-]+$/i.test(lastSegment)) {
-              return lastSegment;
-            }
-            
-            return null;
+        if (clicked) {
+          log.info(`Successfully clicked reviews tab via JavaScript`);
+          await page.waitForTimeout(2000);
+        } else {
+          log.warning(`Could not find or click reviews tab with any method`);
+          
+          // Scroll down to find the reviews section
+          await page.evaluate(() => {
+            window.scrollTo({
+              top: document.body.scrollHeight * 0.7,
+              behavior: 'smooth'
+            });
           });
           
-          if (productId) {
-            log.info(`Successfully extracted product ID: ${productId}`);
+          await page.waitForTimeout(2000);
+        }
+      }
+    } catch (reviewSectionError) {
+      log.warning(`Error finding reviews section: ${reviewSectionError.message}`);
+    }
+
+    // Take a screenshot after attempting to find reviews section
+    await page.screenshot({ path: `sainsburys-after-find-reviews-${Date.now()}.png` }).catch(e => {
+      log.warning(`Failed to take screenshot: ${e.message}`);
+    });
+
+    // Try to extract reviews directly from page JSON data
+    try {
+      log.info('Attempting to extract reviews directly from page JSON data');
+      
+      const reviewsData = await page.evaluate(() => {
+        // Look for JSON data in the page that might contain reviews
+        const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+        
+        for (const script of scripts) {
+          try {
+            const jsonData = JSON.parse(script.textContent);
+            
+            // Check if this is product data with reviews
+            if (jsonData && jsonData.review) {
+              return jsonData.review;
+            }
+            
+            // Or check for reviews in aggregateRating
+            if (jsonData && jsonData.aggregateRating && jsonData.aggregateRating.reviewCount) {
+              return jsonData.review || [];
+            }
+          } catch (e) {
+            console.error('Error parsing JSON:', e);
           }
         }
-      } catch (e) {
-        log.warning(`Error during minimal page load: ${e.message}`);
-      } finally {
-        await minimalPage.close();
-        await context.close();
+        
+        // Also check for any inline review data in HTML
+        const reviewElements = document.querySelectorAll('[itemtype*="Review"], [itemprop="review"]');
+        if (reviewElements.length > 0) {
+          return Array.from(reviewElements).map(el => {
+            // Try to extract structured review data
+            const ratingEl = el.querySelector('[itemprop="ratingValue"]');
+            const authorEl = el.querySelector('[itemprop="author"]');
+            const dateEl = el.querySelector('[itemprop="datePublished"]');
+            const bodyEl = el.querySelector('[itemprop="reviewBody"]');
+            
+            return {
+              rating: ratingEl ? ratingEl.textContent.trim() : '5',
+              author: authorEl ? authorEl.textContent.trim() : '',
+              date: dateEl ? dateEl.textContent.trim() : '',
+              text: bodyEl ? bodyEl.textContent.trim() : ''
+            };
+          });
+        }
+        
+        return null;
+      });
+      
+      if (reviewsData && Array.isArray(reviewsData) && reviewsData.length > 0) {
+        log.info(`Found ${reviewsData.length} reviews in page JSON data`);
+        
+        // Process these reviews and add them to our collection
+        reviewsData.forEach(review => {
+          global.sainsburysReviews.push({
+            rating: review.reviewRating?.ratingValue || review.rating || '5',
+            title: review.name || review.title || 'Review',
+            date: review.datePublished || review.date || '',
+            text: review.reviewBody || review.text || ''
+          });
+        });
+      } else {
+        log.info('No reviews found in page JSON data');
       }
+    } catch (jsonError) {
+      log.warning(`Error extracting reviews from JSON: ${jsonError.message}`);
     }
+
+    // Extract reviews from the page with enhanced validation
+    const pageReviews = await extractSainsburysReviewsEnhanced(page);
     
-    // If we still don't have a product ID, try to parse it from the URL parts
-    if (!productId) {
-      const urlParts = url.split('/');
-      productId = urlParts[urlParts.length - 1].replace('.html', '');
-      log.info(`Using URL last segment as product ID: ${productId}`);
-    }
-    
-    // Now try to access the reviews API directly using the product ID
-    if (productId) {
-      // Create a fresh browser context for API access
-      const apiContext = await page.context().browser().newContext({
-        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
-      });
-      
-      const apiPage = await apiContext.newPage();
-      
-      // Set appropriate headers for API request
-      await apiPage.setExtraHTTPHeaders({
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'Accept-Language': 'en-GB,en;q=0.9',
-        'Origin': 'https://www.sainsburys.co.uk',
-        'Referer': 'https://www.sainsburys.co.uk/',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site',
-        'DNT': '1',
-        'X-Requested-With': 'XMLHttpRequest'
-      });
-      
-      try {
-        // Attempt multiple API endpoints and formats to find reviews
-        const apiEndpoints = [
-          // Standard format
-          `https://reviews.sainsburys-groceries.co.uk/data/reviews.json?ApiVersion=5.4&Filter=ProductId%3A${productId}&Offset=0&Limit=${maxReviews}`,
-          // Try with different parameter format
-          `https://reviews.sainsburys-groceries.co.uk/data/reviews.json?ApiVersion=5.4&Filter=ProductId=${productId}&Offset=0&Limit=${maxReviews}`,
-          // Try with product code format
-          `https://reviews.sainsburys-groceries.co.uk/data/reviews.json?ApiVersion=5.4&Filter=ProductCode%3A${productId}&Offset=0&Limit=${maxReviews}`
+    if (pageReviews.length > 0) {
+      // Apply strict validation filter to remove navigation elements
+      const validReviews = pageReviews.filter(review => {
+        // Check if this is a navigation element mistakenly captured as a review
+        const navKeywords = [
+          'login', 'register', 'groceries', 'favorites', 'nectar', 'offers', 
+          'recipes', 'delivery', 'search', 'accessibility', 'cookie policy', 
+          'terms', 'occasions', 'summer', 'arrow', 'opens in new tab', 
+          'help centre', 'contact us', 'keyworker'
         ];
         
-        for (const endpoint of apiEndpoints) {
-          log.info(`Trying API endpoint: ${endpoint}`);
-          
-          const apiResponse = await apiPage.goto(endpoint, {
-            waitUntil: 'networkidle',
-            timeout: 20000
-          }).catch(e => {
-            log.warning(`API request failed: ${e.message}`);
-            return null;
-          });
-          
-          if (apiResponse && apiResponse.status() === 200) {
-            // Try to parse the response as JSON
-            const responseText = await apiPage.content();
-            try {
-              const responseJson = JSON.parse(responseText);
-              
-              if (responseJson && responseJson.Results && responseJson.Results.length > 0) {
-                log.info(`Successfully retrieved ${responseJson.Results.length} reviews from API`);
-                
-                // Process the reviews
-                responseJson.Results.forEach(review => {
-                  global.sainsburysReviews.push({
-                    rating: review.Rating.toString(),
-                    title: review.Title || 'Review',
-                    date: review.SubmissionTime ? new Date(review.SubmissionTime).toLocaleDateString() : '',
-                    text: review.ReviewText || '',
-                    author: review.UserNickname || '',
-                    productId: productId,
-                    productName: review.ProductTitle || '',
-                    sourceUrl: url
-                  });
-                });
-                
-                // We found reviews, no need to try other endpoints
-                break;
-              }
-            } catch (e) {
-              log.warning(`Error parsing API response: ${e.message}`);
-            }
-          }
-        }
-      } finally {
-        await apiPage.close();
-        await apiContext.close();
-      }
-    }
-    
-    // If direct API access didn't work, fall back to DOM extraction as a last resort
-    if (global.sainsburysReviews.length === 0) {
-      log.info('API extraction failed, attempting DOM extraction as last resort');
-      
-      // Check if we still have a usable page
-      let needsNewPage = true;
-      try {
-        const isUsable = await page.evaluate(() => true).catch(() => false);
-        needsNewPage = !isUsable;
-      } catch (e) {
-        needsNewPage = true;
-      }
-      
-      if (needsNewPage) {
-        const domContext = await page.context().browser().newContext({
-          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          bypassCSP: true
-        });
+        const isNavigation = navKeywords.some(keyword => 
+          review.text.toLowerCase().includes(keyword)
+        );
         
-        const domPage = await domContext.newPage();
-        await domPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => {
-          log.warning(`Failed to load page for DOM extraction: ${e.message}`);
-        });
+        // Also check for other patterns that indicate this isn't a review
+        const hasNoSpaces = review.text.split(' ').length < 4;
+        const tooShort = review.text.length < 20;
+        const isJustNavBar = /Search.+Groceries.+Favorites.+Offers/i.test(review.text);
         
-        // Try to extract reviews from DOM
-        try {
-          const reviews = await extractSainsburysReviews(domPage);
-          if (reviews.length > 0) {
-            log.info(`Extracted ${reviews.length} reviews from DOM`);
-            global.sainsburysReviews.push(...reviews);
-          }
-        } catch (e) {
-          log.error(`DOM extraction failed: ${e.message}`);
-        } finally {
-          await domPage.close();
-          await domContext.close();
-        }
+        return !isNavigation && !hasNoSpaces && !tooShort && !isJustNavBar;
+      });
+      
+      if (validReviews.length > 0) {
+        log.info(`Successfully extracted ${validReviews.length} valid reviews via direct page extraction`);
+        log.info(`Filtered out ${pageReviews.length - validReviews.length} navigation elements`);
+        global.sainsburysReviews = validReviews;
       } else {
-        // Use existing page for DOM extraction
-        try {
-          const reviews = await extractSainsburysReviews(page);
-          if (reviews.length > 0) {
-            log.info(`Extracted ${reviews.length} reviews from DOM`);
-            global.sainsburysReviews.push(...reviews);
-          }
-        } catch (e) {
-          log.error(`DOM extraction failed with existing page: ${e.message}`);
-        }
+        log.info(`All extracted content (${pageReviews.length} items) appeared to be navigation elements`);
       }
     }
-    
+
     log.info(`Total extracted ${global.sainsburysReviews.length} reviews for Sainsbury's`);
-    
+
+    // If we didn't find any reviews, log a warning (but don't add fallbacks)
+    if (global.sainsburysReviews.length === 0) {
+      log.warning('No Sainsbury\'s reviews found after all extraction attempts.');
+    }
   } catch (error) {
     log.error(`Error in Sainsbury's handler: ${error.message}\n${error.stack}`);
+    
+    // Log error but don't add fallback reviews
+    if (global.sainsburysReviews.length === 0) {
+      log.warning('Error occurred and no reviews were found for Sainsbury\'s.');
+    }
   }
-  
+
   return global.sainsburysReviews;
 }
 
-// Helper function to extract reviews from the DOM
-async function extractSainsburysReviews(page) {
+// Extract reviews with enhanced validation
+async function extractSainsburysReviewsEnhanced(page) {
   return await page.evaluate(() => {
-    console.log('Starting Sainsbury\'s review extraction from DOM');
+    console.log('Starting enhanced Sainsbury\'s review extraction with improved validation');
     const results = [];
     
-    // Look for review elements (using multiple selector strategies)
+    // Function to check if text looks like a genuine review
+    function isGenuineReview(text) {
+      if (!text) return false;
+      
+      // Minimum requirements for a valid review
+      if (text.length < 20) return false;
+      if (text.split(' ').length < 5) return false;
+      
+      // Check against navigation/UI patterns more extensively
+      const navigationPatterns = [
+        /login|register|groceries|nectar|offers|recipes|delivery|search|favorites/i,
+        /accessibility|cookie policy|terms|privacy|help centre|contact us/i,
+        /opens in new tab|arrow down|keyworker|discount/i,
+        /basket|trolley|shopping|account|password|sign in|sign out/i,
+        /menu|navigation|header|footer|home page|sitemap/i
+      ];
+      
+      if (navigationPatterns.some(pattern => pattern.test(text))) {
+        return false;
+      }
+      
+      // Check if text resembles a navigation bar or page structure listing
+      if (/Search.+Groceries.+Favorites.+Nectar.+Offers/i.test(text)) {
+        return false;
+      }
+      
+      // Check for review-like content
+      const reviewPatterns = [
+        // Opinion-related terms
+        /good|great|nice|love|like|excellent|recommend|quality|taste|buy/i,
+        // Negative opinions
+        /poor|bad|disappointed|waste|wouldn't recommend|not worth/i,
+        // Product experience
+        /tried|purchased|bought|ordered|delivery|received|arrived/i,
+        // Personal pronouns suggesting real review
+        /\bI\b|\bmy\b|\bwe\b|\bour\b|\bme\b/i
+      ];
+      
+      // Must match at least one review pattern to be considered a review
+      return reviewPatterns.some(pattern => pattern.test(text));
+    }
+    
+    // Approach 1: Enhanced specific container search
     const reviewSelectors = [
-      '.review, [class*="review-item"], [class*="review__container"]',
-      '[data-testid*="review"], [id*="review-item"]',
-      '.pd-reviews__review-container, div[id^="id_"]'
+      // Sainsbury's specific selectors
+      '.reviews-list-item', 
+      '[data-testid*="review"]', 
+      '.product-reviews__list-item', 
+      '.review',
+      // More generic review selectors
+      '[class*="review-item"]',
+      '[class*="review_item"]',
+      '[class*="reviewItem"]',
+      '[id*="review-item"]',
+      '[id*="review_item"]',
+      '.feedback-item',
+      '.comment-item'
     ];
     
-    let reviewElements = [];
+    // Try all selectors to find review containers
     for (const selector of reviewSelectors) {
-      const elements = document.querySelectorAll(selector);
-      if (elements.length > 0) {
-        console.log(`Found ${elements.length} review elements with selector: ${selector}`);
-        reviewElements = Array.from(elements);
-        break;
-      }
-    }
-    
-    // If still no reviews found, try a more aggressive approach
-    if (reviewElements.length === 0) {
-      console.log('No review elements found with standard selectors, trying aggressive approach');
+      const containers = document.querySelectorAll(selector);
+      console.log(`Checking selector "${selector}": found ${containers.length} elements`);
       
-      // Look for any elements that might contain review content
-      const possibleReviews = Array.from(document.querySelectorAll('div, article'))
-        .filter(el => {
-          const text = el.innerText || '';
-          return (text.includes('stars') || text.includes('out of 5')) && 
-                 text.length > 100 && 
-                 !el.querySelector('iframe, script, style');
-        });
-      
-      console.log(`Found ${possibleReviews.length} possible review elements with aggressive approach`);
-      reviewElements = possibleReviews;
-    }
-    
-    // Process found elements
-    for (const element of reviewElements) {
-      try {
-        // Extract rating - multiple methods
-        let rating = '5'; // Default
-        
-        // Method 1: Look for elements with star ratings
-        const ratingSelectors = [
-          '[class*="rating"], [class*="stars"]',
-          '[aria-label*="out of 5"], [aria-label*="stars"]',
-          '[title*="out of 5"], [title*="stars"]'
-        ];
-        
-        for (const selector of ratingSelectors) {
-          const ratingEl = element.querySelector(selector);
-          if (ratingEl) {
-            // Try to extract from attributes first
-            const ariaLabel = ratingEl.getAttribute('aria-label');
-            const title = ratingEl.getAttribute('title');
-            const ratingText = ariaLabel || title || ratingEl.textContent;
+      if (containers.length > 0) {
+        for (const container of containers) {
+          try {
+            // Extract rating
+            let rating = '5'; // Default
             
-            if (ratingText) {
-              const ratingMatch = ratingText.match(/(\d+(\.\d+)?)\s*(star|out of)/i);
-              if (ratingMatch) {
-                rating = ratingMatch[1];
+            // Try multiple rating selectors
+            const ratingSelectors = [
+              '.product-reviews__rating', 
+              '[data-testid*="rating"]',
+              '[class*="rating"]',
+              '[class*="stars"]',
+              'span[itemprop="ratingValue"]'
+            ];
+            
+            for (const ratingSelector of ratingSelectors) {
+              const ratingEl = container.querySelector(ratingSelector);
+              if (ratingEl) {
+                // Try to extract from filled stars
+                const stars = ratingEl.querySelectorAll('svg, .filled, .star-filled, [class*="star-full"]').length;
+                if (stars > 0 && stars <= 5) {
+                  rating = stars.toString();
+                  break;
+                }
+                
+                // Try to extract from text
+                const ratingText = ratingEl.textContent.trim();
+                const ratingMatch = ratingText.match(/(\d+(\.\d+)?)\s*(out of|\/)\s*\d+/);
+                if (ratingMatch) {
+                  rating = ratingMatch[1];
+                  break;
+                }
+              }
+            }
+            
+            // Extract title
+            let title = '';
+            const titleSelectors = [
+              '.product-reviews__title', 
+              'h3', 
+              'h4',
+              '[class*="title"]',
+              '[class*="heading"]',
+              'strong'
+            ];
+            
+            for (const titleSelector of titleSelectors) {
+              const titleEl = container.querySelector(titleSelector);
+              if (titleEl) {
+                title = titleEl.textContent.trim();
                 break;
               }
             }
-          }
-        }
-        
-        // Method 2: Count filled stars
-        if (rating === '5') {
-          const filledStars = element.querySelectorAll('.filled-star, [data-filled="true"], [class*="filled"], svg[class*="active"]').length;
-          if (filledStars > 0 && filledStars <= 5) {
-            rating = filledStars.toString();
-          }
-        }
-        
-        // Method 3: Scan text for rating patterns
-        if (rating === '5') {
-          const elementText = element.innerText;
-          const ratingTextMatch = elementText.match(/(\d+(\.\d+)?)\s*(star|out of\s*5)/i);
-          if (ratingTextMatch) {
-            rating = ratingTextMatch[1];
-          }
-        }
-        
-        // Extract title - multiple methods
-        let title = '';
-        const titleSelectors = [
-          'h3, h4, h5, [class*="title"], [class*="heading"]',
-          '[class*="review-title"], [class*="review__title"]'
-        ];
-        
-        for (const selector of titleSelectors) {
-          const titleEl = element.querySelector(selector);
-          if (titleEl) {
-            title = titleEl.textContent.trim();
-            if (title) break;
-          }
-        }
-        
-        // If no title found, try to extract from first significant text
-        if (!title) {
-          const paragraphs = element.querySelectorAll('p, div');
-          for (const p of paragraphs) {
-            const text = p.textContent.trim();
-            if (text && text.length > 5 && text.length < 100) {
-              title = text;
-              break;
-            }
-          }
-        }
-        
-        // Extract text - find the longest paragraph or text block
-        let text = '';
-        const textSelectors = [
-          'p, [class*="content"], [class*="text"], [class*="body"]',
-          '[class*="review-text"], [class*="review__text"], [class*="review-content"], [class*="review__content"]'
-        ];
-        
-        for (const selector of textSelectors) {
-          const textElements = element.querySelectorAll(selector);
-          if (textElements.length > 0) {
-            // Find the longest text element
-            let longestText = '';
-            for (const el of textElements) {
-              const elText = el.textContent.trim();
-              if (elText.length > longestText.length) {
-                longestText = elText;
+            
+            // Extract date
+            let date = '';
+            const dateSelectors = [
+              '.product-reviews__date', 
+              'time', 
+              '[data-testid*="date"]',
+              '[class*="date"]',
+              '[class*="timestamp"]',
+              'small'
+            ];
+            
+            for (const dateSelector of dateSelectors) {
+              const dateEl = container.querySelector(dateSelector);
+              if (dateEl) {
+                date = dateEl.textContent.trim();
+                break;
               }
             }
             
-            if (longestText) {
-              text = longestText;
-              break;
-            }
-          }
-        }
-        
-        // If no specific text element found but element has substantial text
-        if (!text && element.textContent.length > 100) {
-          // Remove title from the element text if found
-          let fullText = element.textContent;
-          if (title) {
-            fullText = fullText.replace(title, '');
-          }
-          
-          // Remove common UI elements text
-          const commonUITexts = [
-            'Verified Purchase', 'Helpful', 'Report',
-            'Was this helpful?', 'Yes', 'No', 'Flag', 
-            'Share', 'Like', 'Comment', 'Reply'
-          ];
-          
-          for (const uiText of commonUITexts) {
-            fullText = fullText.replace(new RegExp(uiText, 'gi'), '');
-          }
-          
-          // Clean up and use as review text
-          text = fullText.replace(/\s+/g, ' ').trim();
-        }
-        
-        // Extract date
-        let date = '';
-        const dateSelectors = [
-          '[class*="date"], time, [datetime]',
-          '[class*="review-date"], [class*="review__date"]'
-        ];
-        
-        for (const selector of dateSelectors) {
-          const dateEl = element.querySelector(selector);
-          if (dateEl) {
-            // Try datetime attribute first
-            const datetime = dateEl.getAttribute('datetime');
-            if (datetime) {
-              date = new Date(datetime).toLocaleDateString();
-            } else {
-              date = dateEl.textContent.trim();
+            // Extract text (more aggressive approach)
+            let text = '';
+            const textSelectors = [
+              '.product-reviews__text', 
+              'p', 
+              '[data-testid*="text"]',
+              '[class*="text"]',
+              '[class*="content"]',
+              '[class*="body"]',
+              '[class*="description"]'
+            ];
+            
+            // First try with selectors
+            for (const textSelector of textSelectors) {
+              const textEl = container.querySelector(textSelector);
+              if (textEl) {
+                const candidateText = textEl.textContent.trim();
+                if (candidateText.length > 20) {
+                  text = candidateText;
+                  break;
+                }
+              }
             }
             
-            if (date) break;
+            // If no text found with selectors, try using container text directly
+            if (!text) {
+              text = container.textContent.trim();
+              
+              // Clean up the text by removing title, date, etc.
+              if (title) text = text.replace(title, '');
+              if (date) text = text.replace(date, '');
+              
+              // Clean up whitespace
+              text = text.replace(/\s+/g, ' ').trim();
+            }
+            
+            // Apply validation to ensure this is a genuine review
+            if (isGenuineReview(text)) {
+              results.push({ rating, title, date, text });
+              console.log(`Added review with text: "${text.substring(0, 30)}..."`);
+            } else {
+              console.log(`Rejected non-review text: "${text.substring(0, 30)}..."`);
+            }
+          } catch (e) {
+            console.error('Error processing container:', e);
           }
         }
         
-        // Extract author
-        let author = '';
-        const authorSelectors = [
-          '[class*="author"], [class*="nickname"], [class*="user"]',
-          '[class*="review-author"], [class*="review__author"]'
-        ];
-        
-        for (const selector of authorSelectors) {
-          const authorEl = element.querySelector(selector);
-          if (authorEl) {
-            author = authorEl.textContent.trim();
-            // Remove common prefixes
-            author = author.replace(/^(by|written by|posted by|from)/i, '').trim();
-            if (author) break;
-          }
+        // If we found any valid reviews, stop looking
+        if (results.length > 0) {
+          console.log(`Found ${results.length} valid reviews, stopping further searches`);
+          break;
         }
-        
-        // Only add if we have meaningful text or title
-        if (text || (title && title.length > 10)) {
-          results.push({ rating, title, date, text, author });
-        }
-      } catch (e) {
-        console.error('Error extracting review from element:', e);
       }
     }
     
+    // Approach 2: Content-based identification of reviews
+    if (results.length === 0) {
+      console.log('No reviews found with container selectors, trying content-based approach');
+      
+      // Find all paragraphs that could be reviews
+      const paragraphs = document.querySelectorAll('p');
+      
+      for (const p of paragraphs) {
+        try {
+          const text = p.textContent.trim();
+          
+          // Skip elements in navigation/header/footer areas
+          if (p.closest('nav, header, footer, .navigation, .menu, #header, #footer')) {
+            continue;
+          }
+          
+          // Check if this paragraph looks like a review
+          if (isGenuineReview(text)) {
+            // Also verify this is in a content area, not UI
+            const isInReviewSection = !!p.closest('[id*="review"], [class*="review"], [data-testid*="review"], [class*="product-detail"], [class*="product-info"], [class*="description"], main, article, .main-content, #content');
+            
+            if (isInReviewSection) {
+              results.push({ 
+                rating: '5', // Default as we can't find specific rating
+                title: '',   // Default empty title
+                date: '',    // Default empty date
+                text: text
+              });
+              console.log(`Added review from paragraph content approach: "${text.substring(0, 30)}..."`);
+            }
+          }
+        } catch (e) {
+          console.error('Error in content-based approach:', e);
+        }
+      }
+    }
+    
+    console.log(`Returning ${results.length} validated Sainsbury's reviews from enhanced extraction`);
     return results;
   });
 }
