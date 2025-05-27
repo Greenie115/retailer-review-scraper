@@ -463,20 +463,29 @@ async function scrapeReviews(url, options = {}) {
     const page = await context.newPage();
     console.log('DEBUGGING: New page created');
 
-    // Navigate to the URL with additional options
+// Navigate to the URL with additional options
     console.log(`DEBUGGING: Navigating to URL: ${url}`);
     try {
       await page.goto(url, { 
-        waitUntil: 'domcontentloaded', 
-        timeout: 60000
+        waitUntil: 'networkidle', 
+        timeout: 90000
       });
-      console.log('DEBUGGING: Initial navigation successful with domcontentloaded');
+      console.log('DEBUGGING: Initial navigation successful with networkidle');
       
-      // Wait for network to be idle
-      await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(e => {
-        console.log(`DEBUGGING: Network idle wait timed out: ${e.message}`);
+      // Additional wait for JavaScript-heavy sites like Tesco
+      await page.waitForTimeout(5000);
+      
+      // Check if page loaded properly
+      const hasContent = await page.evaluate(() => {
+        return document.body && document.body.innerHTML.length > 1000;
       });
-    } catch (navigationError) {
+      
+      if (!hasContent) {
+        console.log('DEBUGGING: Page appears to have minimal content, retrying...');
+        await page.reload({ waitUntil: 'networkidle', timeout: 60000 });
+        await page.waitForTimeout(5000);
+      }
+    }catch (navigationError) {
       console.log(`DEBUGGING: Initial navigation failed: ${navigationError.message}, trying with different options`);
       // Try again with different options
       try {

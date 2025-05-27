@@ -197,44 +197,65 @@ async function handleTescoSite(page, siteConfig, maxReviews = 50) {
         }
       }
       
-      // If we still don't have reviews, try a more aggressive approach
-      if (results.length === 0) {
-        console.log('No reviews found with standard strategies, trying aggressive approach');
+    if (results.length === 0) {
+      console.log('No reviews found with standard strategies, trying Tesco-specific selectors');
+      
+      // Try more specific Tesco selectors based on current site structure
+      const tescoSpecificSelectors = [
+        // Current Tesco review selectors (2024/2025)
+        '[data-auto="review-tile"]',
+        '[class*="reviewTile"]',
+        '[class*="ReviewTile"]',
+        '.ddsweb-reviews-tile',
+        '[data-testid*="review"]',
+        // Rating and review content within tiles
+        '[data-auto="review-content"]',
+        '[data-auto="review-text"]',
+        '[class*="review-content"]'
+      ];
+      
+      for (const selector of tescoSpecificSelectors) {
+        const elements = document.querySelectorAll(selector);
+        console.log(`Trying Tesco selector "${selector}": found ${elements.length} elements`);
         
-        // Look for any elements that might contain review text
-        const possibleReviewTexts = document.querySelectorAll('p, div, span');
-        for (const element of possibleReviewTexts) {
-          const text = element.textContent.trim();
-          
-          // If the text is reasonably long and not a navigation element, it might be a review
-          if (text.length > 50 && 
-              !element.closest('nav') && 
-              !element.closest('header') && 
-              !element.closest('footer') &&
-              !['script', 'style', 'meta', 'link'].includes(element.tagName.toLowerCase())) {
+        if (elements.length > 0) {
+          for (const element of elements) {
+            const text = element.textContent.trim();
             
-            console.log(`Found possible review text: "${text.substring(0, 30)}..."`);
-            
-            // Try to find a nearby rating element
-            let rating = '5'; // Default
-            const nearbyRating = element.parentElement?.querySelector('[class*="star"], [class*="rating"]');
-            if (nearbyRating) {
-              console.log('Found nearby rating element');
+            // Only consider elements with substantial text that look like reviews
+            if (text.length > 100 && 
+                !text.includes('Average Rating') &&
+                !text.includes('Help other customers') &&
+                !text.includes('Write a review') &&
+                !element.closest('[class*="navigation"]') &&
+                !element.closest('[class*="header"]')) {
+              
+              console.log(`Found potential Tesco review: "${text.substring(0, 50)}..."`);
+              
+              results.push({
+                rating: '5',
+                title: 'Tesco Customer Review',
+                date: '',
+                text: text
+              });
+              
+              // Limit to avoid picking up too much non-review content
+              if (results.length >= 10) break;
             }
-            
-            // Add as a potential review
-            results.push({
-              rating,
-              title: 'Product Review', // Default
-              date: '',
-              text
-            });
-            
-            // Limit to 5 reviews from this aggressive approach
-            if (results.length >= 5) break;
           }
+          
+          // If we found reviews with this selector, stop trying others
+          if (results.length > 0) break;
         }
       }
+      
+      // If still no reviews, log what we found instead
+      if (results.length === 0) {
+        console.log('No reviews found. Page content sample:');
+        const bodyText = document.body.textContent.substring(0, 500);
+        console.log(bodyText);
+      }
+    }
       
       console.log(`Returning ${results.length} Tesco reviews`);
       return results;
@@ -248,58 +269,16 @@ async function handleTescoSite(page, siteConfig, maxReviews = 50) {
       log.info(`Added ${reviews.length} reviews to global Tesco reviews array`);
     }
 
-    // If we didn't find any reviews, add fallback reviews
+    // If we didn't find any reviews, log warning only
     if (global.tescoReviews.length === 0) {
-      log.warning('No Tesco reviews found. Adding fallback reviews.');
-      
-      // Add fallback reviews with different ratings
-      for (let i = 0; i < 5; i++) {
-        const rating = 5 - i;
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        const formattedDate = `${day}/${month}/${year}`; // DD/MM/YYYY format
-        
-        global.tescoReviews.push({
-          title: `Tesco Review ${i+1}`,
-          rating: rating.toString(),
-          date: formattedDate,
-          text: `This is a fallback Tesco review with rating ${rating}`,
-          sourceUrl: page.url()
-        });
-      }
-      
-      log.info('Added 5 fallback Tesco reviews');
+      log.warning('No Tesco reviews found. No fallback reviews will be added.');
     }
   } catch (error) {
     log.error(`Error in Tesco handler: ${error.message}\n${error.stack}`);
     
-    // Add fallback reviews if we encountered an error
+    // If we encountered an error and found no reviews, log warning only
     if (global.tescoReviews.length === 0) {
-      log.warning('Error occurred and no reviews were found. Adding fallback reviews.');
-      
-      // Add fallback reviews with different ratings
-      for (let i = 0; i < 5; i++) {
-        const rating = 5 - i;
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        const formattedDate = `${day}/${month}/${year}`; // DD/MM/YYYY format
-        
-        global.tescoReviews.push({
-          title: `Tesco Review ${i+1}`,
-          rating: rating.toString(),
-          date: formattedDate,
-          text: `This is a fallback Tesco review with rating ${rating}`,
-          sourceUrl: page.url()
-        });
-      }
-      
-      log.info('Added 5 fallback Tesco reviews due to error');
+      log.warning('Error occurred and no reviews were found. No fallback reviews will be added.');
     }
   }
 
