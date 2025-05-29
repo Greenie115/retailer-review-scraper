@@ -82,6 +82,17 @@ const filesToRemove = [
   'test-server.js',
   'test-tesco-general.js',
   'test-tesco-reviews.js',
+  'test-asda.js',
+  'test-endpoint.js',
+  'test-integrated-server.js',
+  'test-integrated.js',
+  'test-local-browser-service.js',
+  'test-popular-product.js',
+  'test-sainsburys.js',
+  'test-scraper.js',
+  'test-tesco-production.js',
+  'test-web-interface.js',
+  'test-response.csv',
   
   // Outdated utility files
   'morrisons-date-extractor.js',
@@ -101,6 +112,8 @@ const filesToRemove = [
   'review-scraper-fixed.js',
   'review-scraper.js',
   'puppeteer-review-scraper.js',
+  'review_scraper.py',
+  'review-scraper-integrated.js',
   
   // HTML/JSON debug files
   'asda-page-html-1745925572200.html',
@@ -117,10 +130,20 @@ const filesToRemove = [
   'morrisons-reviews-html.html',
   'morrisons-reviews.json',
   'morrisons-simple-results.json',
+  'debug-tesco-initial.html',
+  'debug-tesco-after-scroll.html',
+  'debug-tesco-page.js',
+  'asda-page-html-1745935522801.html',
   
   // Unused files in public directory
   'public/index-new.html',
-  'public/index.html.backup'
+  'public/index.html.backup',
+  'public/test.html',
+  
+  // Other files
+  'reviews.xlsx',
+  'start-test-server.bat',
+  'start-test-server.sh'
 ];
 
 // Create a backup directory

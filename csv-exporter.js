@@ -142,16 +142,38 @@ function generateCsvContent(reviews, options = {}) {
     // Format the date for display
     const reviewDate = formatDateForCsv(review.date);
     
-    // Clean the title if it contains "Rated" text
+    // Clean and validate review components
     let cleanTitle = review.title || '';
+    let cleanText = review.text || '';
+    let rating = review.rating || '5';
     
     // First, handle any escaped characters (like \x22 for quotes)
-    cleanTitle = cleanTitle.replace(/\\x22/g, '"');
-    cleanTitle = cleanTitle.replace(/\\x27/g, "'");
+    cleanTitle = cleanTitle.replace(/\\x22/g, '"').replace(/\\x27/g, "'");
+    cleanText = cleanText.replace(/\\x22/g, '"').replace(/\\x27/g, "'");
     
-    // Then remove the "Rated X out of 5" part
-    if (cleanTitle.includes('Rated')) {
-      cleanTitle = cleanTitle.split('Rated')[0].trim();
+    // Then clean up the title to remove any rating information
+    cleanTitle = cleanTitle
+      .replace(/\d+\s*(?:out of|\/)\s*\d+\s*stars?/gi, '')
+      .replace(/\d+\s*stars?/gi, '')
+      .replace(/Rated\s+/i, '')
+      .trim();
+    
+    // Clean up the text to remove any rating information
+    cleanText = cleanText
+      .replace(/\d+\s*(?:out of|\/)\s*\d+\s*stars?/gi, '')
+      .replace(/\d+\s*stars?/gi, '')
+      .replace(/Rated\s+/i, '')
+      .trim();
+    
+    // Make sure title and text don't contain each other
+    if (cleanTitle && cleanText && cleanText.includes(cleanTitle)) {
+      cleanText = cleanText.replace(cleanTitle, '').trim();
+    }
+    
+    // Validate rating is numeric and in range 1-5
+    const numericRating = parseInt(rating);
+    if (isNaN(numericRating) || numericRating < 1 || numericRating > 5) {
+      rating = '5'; // Default to 5 if invalid
     }
     
     // Extract just the date part from the timestamp
@@ -161,11 +183,11 @@ function generateCsvContent(reviews, options = {}) {
     
     const row = [
       escapeCsvField(review.productName || 'Unknown Product'),
-      escapeCsvField(review.rating || '5'),
+      escapeCsvField(rating),
       escapeCsvField(reviewDate),
       escapeCsvField(review.inDateRange === false ? 'No' : 'Yes'),
-      escapeCsvField(cleanTitle),
-      escapeCsvField(review.text || ''),
+      escapeCsvField(cleanTitle || 'Untitled Review'),
+      escapeCsvField(cleanText || ''),
       escapeCsvField(extractionDate)
     ];
     
